@@ -64,7 +64,7 @@ Papyrus Docs is an **enterprise-grade API documentation and playground** that li
 ### 1. Require the package
 
 ```bash
-composer require ahmedtarboush/papyrus-docs
+composer require ahmedtarboush/papyrus-docs --dev
 ```
 
 ### 2. Run the install command (recommended)
