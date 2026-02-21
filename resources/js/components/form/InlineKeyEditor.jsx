@@ -52,7 +52,7 @@ export default function InlineKeyEditor({ value, onChange, disabled = false }) {
                     onChange={e => setDraft(e.target.value)}
                     onBlur={commit}
                     onKeyDown={handleKeyDown}
-                    className="bg-[#0F172A] border border-amber-500/50 text-amber-400 font-mono text-sm px-1.5 py-0.5 rounded outline-none w-32"
+                    className="bg-white dark:bg-[#0F172A] border border-amber-500/50 text-amber-700 dark:text-amber-400 font-mono text-sm px-1.5 py-0.5 rounded outline-none w-32"
                     placeholder="key"
                 />
                 <button onClick={commit} className="text-emerald-400 hover:text-emerald-300 transition-colors" title="Save">

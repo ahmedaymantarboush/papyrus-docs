@@ -22,6 +22,21 @@ export default function Playground({ route, formValues, pathVals, open, onClose,
     const [isFromCache, setIsFromCache] = useState(false);
     const [showRH, setShowRH] = useState(false);
     const pgRef = useRef(null);
+    const iframeRef = useRef(null);
+
+    const handleIframeLoad = () => {
+        if (!iframeRef.current) return;
+        try {
+            const iframe = iframeRef.current;
+            const doc = iframe.contentDocument || iframe.contentWindow?.document;
+            if (doc?.body) {
+                const height = Math.max(doc.body.scrollHeight, doc.documentElement?.scrollHeight || 0);
+                iframe.style.height = `${Math.min(Math.max(height + 20, 200), 800)}px`;
+            }
+        } catch (err) {
+            console.warn('Could not auto-resize iframe due to cross-origin policies.');
+        }
+    };
 
     const startResizing = useCallback((mouseDownEvent) => {
         mouseDownEvent.preventDefault();
@@ -245,11 +260,28 @@ export default function Playground({ route, formValues, pathVals, open, onClose,
                                             <div className="w-full bg-slate-50 dark:bg-[#1E293B] rounded-lg border border-slate-200 dark:border-slate-700/40 overflow-hidden shadow-inner">
                                                 <div className="w-full px-4 py-2 bg-slate-100/80 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700/40"><span className="text-[10px] text-slate-500 font-mono">Response Body</span></div>
                                                 <div className="w-full p-2 custom-scrollbar overflow-x-auto min-h-[100px]">
-                                                    {typeof response.data === 'string' ? (
-                                                        <pre className="p-2 text-[12px] font-mono text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-all leading-relaxed">
-                                                            {response.data}
-                                                        </pre>
-                                                    ) : (
+                                                    {typeof response.data === 'string' ? (() => {
+                                                        const ct = (response.headers['content-type'] || '').toLowerCase();
+                                                        const isHtml = ct.includes('text/html') || /^\s*<!doctype\s+html/i.test(response.data) || /^\s*<html/i.test(response.data);
+                                                        if (isHtml) {
+                                                            return (
+                                                                <iframe
+                                                                    ref={iframeRef}
+                                                                    srcDoc={response.data}
+                                                                    sandbox="allow-same-origin allow-scripts"
+                                                                    title="HTML Response Preview"
+                                                                    className="w-full border-0 rounded bg-white"
+                                                                    style={{ width: '100%', minHeight: '200px' }}
+                                                                    onLoad={handleIframeLoad}
+                                                                />
+                                                            );
+                                                        }
+                                                        return (
+                                                            <pre className="p-2 text-[12px] font-mono text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-all leading-relaxed">
+                                                                {response.data}
+                                                            </pre>
+                                                        );
+                                                    })() : (
                                                         <JsonEditor
                                                             data={response.data}
                                                             theme={document.documentElement.classList.contains('dark') ? githubDarkTheme : githubLightTheme}

@@ -248,7 +248,7 @@ class PapyrusGenerator
                 $params[] = [
                     'type'        => strtolower(trim($match[1])),
                     'key'         => trim($match[2]),
-                    'description' => trim($match[3] ?? ''),
+                    'description' => trim($match[3]),
                 ];
             }
         }
@@ -320,7 +320,7 @@ class PapyrusGenerator
                 $params[$statusCode][] = [
                     'type'        => strtolower(trim($match[2])),
                     'key'         => trim($match[3]),
-                    'description' => trim($match[4] ?? ''),
+                    'description' => trim($match[4]),
                 ];
             }
         }
@@ -342,7 +342,7 @@ class PapyrusGenerator
                 $params[] = [
                     'type'        => strtolower(trim($match[1])),
                     'key'         => trim($match[2]),
-                    'description' => trim($match[3] ?? ''),
+                    'description' => trim($match[3]),
                 ];
             }
         }
@@ -363,7 +363,7 @@ class PapyrusGenerator
             foreach ($matches as $match) {
                 $headers[] = [
                     'key'         => trim($match[1]),
-                    'description' => trim($match[2] ?? ''),
+                    'description' => trim($match[2]),
                 ];
             }
         }
@@ -423,7 +423,7 @@ class PapyrusGenerator
             foreach ($parts as $i => $part) {
                 $isLast = ($i === count($parts) - 1);
 
-                if (! isset($current[$part])) {
+                if (! isset($current[$part])) { // @phpstan-ignore isset.offset
                     $current[$part] = [
                         'key'      => $part,
                         'type'     => $isLast ? $schemaType : 'object',
@@ -474,7 +474,7 @@ class PapyrusGenerator
 
         foreach ($reflection->getParameters() as $parameter) {
             $type = $parameter->getType();
-            if (! $type || $type->isBuiltin()) {
+            if (! $type instanceof \ReflectionNamedType || $type->isBuiltin()) {
                 continue;
             }
 
@@ -610,7 +610,7 @@ class PapyrusGenerator
             $result[] = $node;
         }
 
-        return array_values($result);
+        return $result;
     }
 
     /**
@@ -623,7 +623,7 @@ class PapyrusGenerator
     {
         $returnType = $reflection->getReturnType();
 
-        if (! $returnType || $returnType->isBuiltin()) {
+        if (! $returnType instanceof \ReflectionNamedType || $returnType->isBuiltin()) {
             return null;
         }
 

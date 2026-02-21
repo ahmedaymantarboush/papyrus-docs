@@ -2,6 +2,7 @@
 
 namespace AhmedTarboush\PapyrusDocs\Validation;
 
+use Illuminate\Validation\Rules\Enum;
 use Illuminate\Validation\Rules\In;
 
 /**
@@ -124,7 +125,12 @@ class ValidationParser
                 // Other Rule objects
                 if (is_object($rule)) {
                     if (method_exists($rule, '__toString')) {
-                        $normalized[] = (string) $rule;
+                        try {
+                            $normalized[] = (string) $rule;
+                        } catch (\Throwable $e) { // @phpstan-ignore catch.neverThrown (__toString CAN throw)
+                            // __toString() can fail (e.g. Enum with unloadable class)
+                            $normalized[] = get_class($rule);
+                        }
                     } else {
                         $normalized[] = get_class($rule);
                     }

@@ -225,7 +225,7 @@ class PostmanGenerator
     {
         // Check for options first (enum/select)
         $options = is_array($node) ? ($node['options'] ?? null) : (is_object($node) ? ($node->options ?? null) : null);
-        if ($options && is_array($options) && count($options) > 0) {
+        if (is_array($options) && count($options) > 0) {
             return $options[0]; // First option as default
         }
 

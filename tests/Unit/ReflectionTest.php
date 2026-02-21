@@ -4,6 +4,13 @@ use AhmedTarboush\PapyrusDocs\PapyrusGenerator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Validation\Rule;
+
+enum GenderEnum: string
+{
+    case Male = 'male';
+    case Female = 'female';
+}
 
 class ReflectionController
 {
@@ -34,6 +41,7 @@ class ReflectionRequest extends FormRequest
             'count' => 'integer|min:1',
             'status' => 'required|in:active,inactive,pending',
             'avatar' => ['required', 'image'],
+            'gender' => ['required', 'string', Rule::enum(GenderEnum::class)],
         ];
     }
 }
@@ -94,4 +102,11 @@ it('extracts form request validation rules', function () {
     expect($avatar)->not->toBeNull();
     expect($avatar['type'])->toBe('file');
     expect($avatar['required'])->toBeTrue();
+
+    // Rule::enum() extraction — options from Enum.__toString()
+    $gender = $params->firstWhere('key', 'gender');
+    expect($gender)->not->toBeNull();
+    expect($gender['type'])->toBe('select');
+    expect($gender['options'])->toBe(['male', 'female']);
+    expect($gender['required'])->toBeTrue();
 });

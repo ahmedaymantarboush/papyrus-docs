@@ -43,7 +43,15 @@ class OptionsExtractor
 
             if (str_starts_with($r, 'in:')) {
                 $values = explode(',', substr((string) $rule, 3)); // Use original case
-                $options = array_map('trim', $values);
+                $options = array_map(function ($v) {
+                    $v = trim($v);
+                    // Strip surrounding double-quotes from Enum.__toString() format
+                    if (strlen($v) >= 2 && $v[0] === '"' && $v[strlen($v) - 1] === '"') {
+                        $v = substr($v, 1, -1);
+                        $v = str_replace('""', '"', $v); // Unescape doubled quotes
+                    }
+                    return $v;
+                }, $values);
             }
         }
 

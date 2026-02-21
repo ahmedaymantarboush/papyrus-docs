@@ -189,7 +189,7 @@ class ConstraintExtractor
                 ])) {
                     return [
                         'rule'  => $prefix,
-                        'field' => $params[0] ?? '',
+                        'field' => $params[0],
                         'value' => $params[1] ?? '',
                     ];
                 }

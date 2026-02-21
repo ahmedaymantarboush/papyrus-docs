@@ -36,8 +36,8 @@ class PapyrusController extends Controller
 
         // Append debug metadata as headers if enabled
         if (config('papyrus.debug', false)) {
-            $response->header('X-Papyrus-Debug-Time-Ms', round((microtime(true) - $startTime) * 1000, 2));
-            $response->header('X-Papyrus-Debug-Memory-Mb', round((memory_get_usage(true) - $startMemory) / 1024 / 1024, 2));
+            $response->header('X-Papyrus-Debug-Time-Ms', (string) round((microtime(true) - $startTime) * 1000, 2));
+            $response->header('X-Papyrus-Debug-Memory-Mb', (string) round((memory_get_usage(true) - $startMemory) / 1024 / 1024, 2));
             $response->header('X-Papyrus-Debug-PHP', PHP_VERSION);
             $response->header('X-Papyrus-Debug-Laravel', app()->version());
         }
