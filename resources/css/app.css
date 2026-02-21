@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-amber-50: #fffbeb;
+  --color-amber-100: #fef3c7;
+  --color-amber-200: #fde68a;
+  --color-amber-300: #fcd34d;
+  --color-amber-400: #fbbf24;
+  --color-amber-500: #f59e0b;
+  --color-amber-600: #d97706;
+  --color-amber-700: #b45309;
+  --color-amber-800: #92400e;
+  --color-amber-900: #78350f;
+  --color-amber-950: #451a03;
+
+  --color-slate-850: #1e293b;
+  --color-slate-900: #0f172a;
+  --color-slate-950: #020617;
+
+  --font-brand: "Playfair Display", serif;
+  --font-mono: "Fira Code", monospace;
+  --font-sans: "Inter", sans-serif;
+}
+
+.custom-scrollbar::-webkit-scrollbar-corner {
+    background-color: transparent;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   JSON EDITOR REACT OVERRIDES
+   ───────────────────────────────────────────────────────────────────────────── */
+.jer-container {
+    --jer-font-size: 13px !important;
+    --jer-font-family: var(--font-mono) !important;
+    --jer-background: transparent !important;
+    --jer-color: #cbd5e1 !important;
+    --jer-string-color: #f59e0b !important; /* amber-500 */
+    --jer-number-color: #38bdf8 !important; /* sky-400 */
+    --jer-boolean-color: #a78bfa !important; /* violet-400 */
+    --jer-property-color: #94a3b8 !important; /* slate-400 */
+    
+    font-size: var(--jer-font-size);
+}
+
+.jer-container svg {
+    width: 12px !important;
+    height: 12px !important;
+}
+
+.jer-container button {
+    padding: 2px 4px !important;
+}
+
+.jer-container input, .jer-container textarea {
+    font-size: var(--jer-font-size) !important;
+    background: #1e293b !important; /* slate-800 */
+    color: #f8fafc !important; /* slate-50 */
+    border-radius: 4px;
+    padding: 2px 6px !important;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-slate-900);
+    color: var(--color-slate-50);
+  }
+}

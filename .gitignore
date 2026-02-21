@@ -1,0 +1,16 @@
+/vendor
+/node_modules
+/public
+/storage/*.key
+.env
+.env.backup
+.phpunit.result.cache
+.DS_Store
+.idea
+.vscode
+npm-debug.log
+yarn-error.log
+
+# Build artifacts
+/dist/hot
+/dist/build/manifest.json
