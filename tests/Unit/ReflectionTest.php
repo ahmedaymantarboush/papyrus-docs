@@ -68,24 +68,30 @@ it('extracts form request validation rules', function () {
     $groups = $generator->scan();
     $route = $groups->pluck('routes')->flatten()->first(fn($r) => $r->uri === 'reflection/store');
 
-    // bodyParams is now enriched: key => { rules, type, required, options }
-    expect($route->bodyParams)->toHaveKey('name');
-    expect($route->bodyParams['name']['type'])->toBe('string');
-    expect($route->bodyParams['name']['required'])->toBeTrue();
-    expect($route->bodyParams['name']['rules'])->toContain('required');
-    expect($route->bodyParams['name']['rules'])->toContain('string');
+    // bodyParams is now an array of node arrays with 'key' field
+    $params = collect($route->bodyParams);
 
-    expect($route->bodyParams)->toHaveKey('count');
-    expect($route->bodyParams['count']['type'])->toBe('number');
+    $name = $params->firstWhere('key', 'name');
+    expect($name)->not->toBeNull();
+    expect($name['type'])->toBe('text');
+    expect($name['required'])->toBeTrue();
+    expect($name['rules'])->toContain('required');
+    expect($name['rules'])->toContain('string');
+
+    $count = $params->firstWhere('key', 'count');
+    expect($count)->not->toBeNull();
+    expect($count['type'])->toBe('number');
 
     // Enum extraction
-    expect($route->bodyParams)->toHaveKey('status');
-    expect($route->bodyParams['status']['type'])->toBe('select');
-    expect($route->bodyParams['status']['options'])->toBe(['active', 'inactive', 'pending']);
-    expect($route->bodyParams['status']['required'])->toBeTrue();
+    $status = $params->firstWhere('key', 'status');
+    expect($status)->not->toBeNull();
+    expect($status['type'])->toBe('select');
+    expect($status['options'])->toBe(['active', 'inactive', 'pending']);
+    expect($status['required'])->toBeTrue();
 
     // File detection
-    expect($route->bodyParams)->toHaveKey('avatar');
-    expect($route->bodyParams['avatar']['type'])->toBe('file');
-    expect($route->bodyParams['avatar']['required'])->toBeTrue();
+    $avatar = $params->firstWhere('key', 'avatar');
+    expect($avatar)->not->toBeNull();
+    expect($avatar['type'])->toBe('file');
+    expect($avatar['required'])->toBeTrue();
 });
