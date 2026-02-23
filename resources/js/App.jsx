@@ -338,7 +338,7 @@ export default function App() {
             {/* ── TOP NAVBAR (Fixed) ── */}
             <header className="fixed top-0 inset-x-0 h-14 bg-white dark:bg-[#0B1120] border-b border-slate-200 dark:border-slate-800/60 flex items-center justify-between px-4 z-50">
                 <div className="flex items-center gap-3">
-                    <button onClick={() => setMenuOpen(true)} className="lg:hidden text-slate-500 hover:text-amber-500 transition-colors">
+                    <button onClick={() => { setMenuOpen(prev => !prev); setPlaygroundOpen(false); }} className="lg:hidden text-slate-500 hover:text-amber-500 transition-colors">
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
                     </button>
                     <h1 className="font-brand font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
@@ -375,7 +375,7 @@ export default function App() {
                     </button>
 
                     {/* Mobile Playground Toggle */}
-                    <button onClick={() => setPlaygroundOpen(true)} className="lg:hidden text-amber-500 dark:text-amber-400 font-mono text-xs font-bold hover:text-amber-600 dark:hover:text-amber-300 transition-colors ml-2">TRY IT</button>
+                    <button onClick={() => { setPlaygroundOpen(prev => !prev); setMenuOpen(false); }} className="lg:hidden text-amber-500 dark:text-amber-400 font-mono text-xs font-bold hover:text-amber-600 dark:hover:text-amber-300 transition-colors ml-2">TRY IT</button>
                 </div>
             </header>
 
@@ -384,7 +384,7 @@ export default function App() {
                 <Sidebar schema={schema} activeId={activeId} onSelect={handleRouteSelect} open={menuOpen} onClose={() => setMenuOpen(false)} width={sidebarWidth} setWidth={setSidebarWidth} />
                 <main className="flex-1 overflow-y-auto scroll-smooth custom-scrollbar relative bg-white dark:bg-[#0B1120]">
                     <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-amber-500/40 to-transparent z-10" />
-                    <DocSection route={activeRoute} formTree={formTree} setFormTree={setFormTree} queryTree={queryTree} setQueryTree={setQueryTree} pathVals={pathVals} onPathChange={onPathChange} schema={schema} onSelect={handleRouteSelect} onExecuteRequest={() => { setPlaygroundOpen(true); if (executeRef.current) executeRef.current(); }} executing={executing} onReset={resetFormState} />
+                    <DocSection route={activeRoute} formTree={formTree} setFormTree={setFormTree} queryTree={queryTree} setQueryTree={setQueryTree} pathVals={pathVals} onPathChange={onPathChange} schema={schema} onSelect={handleRouteSelect} onExecuteRequest={() => { setPlaygroundOpen(true); setMenuOpen(false); if (executeRef.current) executeRef.current(); }} executing={executing} onReset={resetFormState} />
                 </main>
                 <Playground route={activeRoute} formValues={preparedForm} queryValues={preparedQuery} pathVals={pathVals} open={playgroundOpen} onClose={() => setPlaygroundOpen(false)} customHeaders={customHeaders} setCustomHeaders={setCustomHeaders} settings={settings} setSettings={setSettings} width={playgroundWidth} setWidth={setPlaygroundWidth} onExecuteRef={executeRef} executing={executing} setExecuting={setExecuting} />
             </div>
