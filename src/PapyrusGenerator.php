@@ -35,13 +35,14 @@ class PapyrusGenerator
      */
     public function scan()
     {
-        $prefix       = config('papyrus.only_route_uri_start_with', '');
-        $hidePatterns = config('papyrus.hide_matching', []);
-        $docPath      = config('papyrus.url', config('papyrus.path', 'papyrus-docs'));
+        $prefix          = config('papyrus.only_route_uri_start_with', '');
+        $hidePatterns    = config('papyrus.hide_matching', []);
+        $visiblePatterns = config('papyrus.visible_matching', []);
+        $docPath         = config('papyrus.url', config('papyrus.path', 'papyrus-docs'));
 
         $routes = collect(Route::getRoutes())->map(function ($route) {
             return $this->processRoute($route);
-        })->filter(function ($route) use ($prefix, $hidePatterns, $docPath) {
+        })->filter(function ($route) use ($prefix, $hidePatterns, $visiblePatterns, $docPath) {
             if (! $route) return false;
 
             $uri = $route->uri;
@@ -51,6 +52,22 @@ class PapyrusGenerator
 
             // Always hide our own documentation routes
             if (str_starts_with($uri, $docPath)) return false;
+
+            // If visible_matching is defined, the route MUST match at least one pattern
+            if (! empty($visiblePatterns)) {
+                $isVisible = false;
+                foreach ($visiblePatterns as $pattern) {
+                    try {
+                        if (preg_match($pattern, $uri)) {
+                            $isVisible = true;
+                            break;
+                        }
+                    } catch (\Throwable $e) {
+                        continue;
+                    }
+                }
+                if (! $isVisible) return false;
+            }
 
             // Dynamic regex exclusions from config
             foreach ($hidePatterns as $pattern) {
@@ -151,6 +168,11 @@ class PapyrusGenerator
             // Parse JSON if possible to return an object/array, otherwise treat as string
             $decoded = json_decode($example, true);
             $responses[$statusCode]['responseExample'] = json_last_error() === JSON_ERROR_NONE ? $decoded : $example;
+
+            // Optional: Auto-generate schema from example if one wasn't explicitly provided via @papyrus-responseParam
+            if (empty($responses[$statusCode]['schema']) && is_array($decoded)) {
+                $responses[$statusCode]['schema'] = $this->buildSchemaFromJson($decoded);
+            }
         }
 
         return (object) [
@@ -295,7 +317,7 @@ class PapyrusGenerator
         if (! $comment) return [];
 
         $examples = [];
-        if (preg_match_all('/@papyrus-responseExample-start\s+(\d+)\s*\n(.*?)\s*@papyrus-responseExample-end/s', $comment, $matches, PREG_SET_ORDER)) {
+        if (preg_match_all('/@papyrus-responseExample-start\s+(\d+)[\s]+(.*?)\s*@papyrus-responseExample-end/s', $comment, $matches, PREG_SET_ORDER)) {
             foreach ($matches as $match) {
                 $statusCode = $match[1];
                 $lines = explode("\n", $match[2]);
@@ -428,34 +450,62 @@ class PapyrusGenerator
             $current = &$tree;
             $schemaType = $typeMap[$param['type']] ?? $param['type']; // Dynamic discovery fallback
 
-            foreach ($parts as $i => $part) {
-                $isLast = ($i === count($parts) - 1);
+            // Check if this key contains a wildcard for an array
+            $isWildcardArray = in_array('*', $parts, true);
+            $parsedParts = [];
+
+            // Pre-process parts to handle '*'. E.g. 'users.*.name' -> ['users', 'name'] with isList on 'users'.
+            foreach ($parts as $part) {
+                if ($part === '*') {
+                    if (!empty($parsedParts)) {
+                        $parsedParts[count($parsedParts) - 1]['isList'] = true;
+                    }
+                    continue;
+                }
+                $parsedParts[] = [
+                    'key' => $part,
+                    'isPattern' => str_ends_with($part, '*'),
+                    'isList' => false,
+                ];
+            }
+
+            foreach ($parsedParts as $i => $partData) {
+                $isLast = ($i === count($parsedParts) - 1);
+                $part = $partData['key'];
 
                 if (! isset($current[$part])) { // @phpstan-ignore isset.offset
                     $current[$part] = [
                         'key'      => $part,
                         'type'     => $isLast ? $schemaType : 'object',
+                        'isList'   => false,
                         'children' => [],
                     ];
+                }
+
+                // If this part was marked as a list by a subsequent '*', update it
+                if ($partData['isList']) {
+                    $current[$part]['type'] = 'object'; // Arrays of objects are 'object' + 'isList'
+                    $current[$part]['isList'] = true;
+                    if ($isLast && $schemaType !== 'object') {
+                        // If it's a list of scalars (e.g. users.* => string), it's type=array, childType=scalar
+                        $current[$part]['type'] = 'array';
+                        $current[$part]['isList'] = false; // It's an array of scalars, not an array of objects
+                        $current[$part]['childType'] = $schemaType;
+                    }
+                }
+
+                if ($partData['isPattern']) {
+                    $current[$part]['isPattern'] = true;
                 }
 
                 if ($isLast) {
                     // Populate with the same shape as ValidationParser output
                     $current[$part] = array_merge($current[$part], [
                         'key'          => $part,
-                        'type'         => $schemaType,
+                        'type'         => $current[$part]['type'], // Keep the type computed above
                         'required'     => str_contains(strtolower($param['description']), 'required'),
                         'nullable'     => str_contains(strtolower($param['description']), 'nullable'),
                         'description'  => $param['description'],
-                        'min'          => null,
-                        'max'          => null,
-                        'pattern'      => null,
-                        'accept'       => $schemaType === 'file' ? null : null,
-                        'confirmed'    => false,
-                        'dimensions'   => null,
-                        'conditionals' => [],
-                        'options'      => null,
-                        'rules'        => ['@papyrus-bodyParam'],
                     ]);
                 }
 
@@ -663,6 +713,7 @@ class PapyrusGenerator
                     // Wildcard without children → simple array of scalar type
                     $node['type']      = 'array';
                     $node['childType'] = $wildcard['type'] ?? 'string';
+                    $node['isList']    = false;
 
                     // Heuristic: keys containing 'meta' default to object builder
                     if (str_contains(strtolower((string)$node['key']), 'meta')) {
@@ -676,6 +727,12 @@ class PapyrusGenerator
                 // but standard Laravel convention treats `courses.*` as the primary type definition for an array.
                 unset($node['children']);
             }
+            // ── Pre-configured arrays/lists (e.g. from buildManualSchema or JSON examples)
+            elseif ($node['isList'] ?? false) {
+                $node['type']   = 'object';
+                $node['schema'] = $this->formatSchemaNodes($node['children'] ?? []);
+                unset($node['children']);
+            }
             // ── Named children → object ──────────────────────────────
             elseif (! empty($node['children'])) {
                 $node['type']   = 'object';
@@ -686,6 +743,10 @@ class PapyrusGenerator
             // ── Leaf node (no children) ──────────────────────────────
             else {
                 unset($node['children']);
+                if (isset($node['isList']) && $node['isList'] !== true) {
+                    // Ensure isList is present for UI normalization
+                    $node['isList'] = false;
+                }
             }
 
             $result[] = $node;
@@ -722,5 +783,98 @@ class PapyrusGenerator
         }
 
         return null;
+    }
+
+    /**
+     * Recursively auto-generate a schema tree from a decoded JSON payload array.
+     * 
+     * @param array $data Decoded JSON
+     * @return array Nested schema tree matching the output format of ValidationParser
+     */
+    protected function buildSchemaFromJson(array $data): array
+    {
+        $schema = [];
+
+        // Check if the current payload is a sequential array (a list/collection)
+        $isList = array_is_list($data);
+
+        // If it's a list, we analyze the first item to define the array schema
+        if ($isList) {
+            if (empty($data)) {
+                return []; // Can't determine schema of empty list
+            }
+
+            $firstItem = $data[0];
+            $type = gettype($firstItem);
+
+            if ($type === 'array') {
+                return $this->buildSchemaFromJson($firstItem);
+            }
+
+            return []; // Primitives directly at root list level not fully supported as nodes yet, usually wrapped
+        }
+
+        // Iterate over associative array properties
+        foreach ($data as $key => $value) {
+            $type = gettype($value);
+
+            // Map PHP types to UI schema types
+            $uiType = match ($type) {
+                'integer', 'double' => 'number',
+                'boolean'           => 'boolean',
+                'array'             => 'object',
+                'NULL'              => 'text', // Fallback
+                default             => 'text',
+            };
+
+            $node = [
+                'key'          => (string) $key,
+                'type'         => $uiType,
+                'required'     => false,
+                'nullable'     => $type === 'NULL',
+                'description'  => 'Auto-extracted from example',
+                'children'     => [],
+                'isList'       => false,
+                'isPattern'    => false,
+            ];
+
+            if ($type === 'array') {
+                if (array_is_list($value)) {
+                    // For lists (sequential arrays), we need to determine if it's a list of objects or a list of scalars
+                    $node['isList'] = true;
+                    if (!empty($value)) {
+                        $firstChild = $value[0];
+                        if (is_array($firstChild)) {
+                            // Array of objects
+                            $node['type'] = 'object';
+                            $node['children'] = $this->buildSchemaFromJson($firstChild);
+                        } else {
+                            // Array of scalars
+                            $node['type'] = 'array';
+                            $node['isList'] = false; // The parent type is 'array' holding scalars, not 'object' holding multiple copies
+                            $node['childType'] = match (gettype($firstChild)) {
+                                'integer', 'double' => 'number',
+                                'boolean'           => 'boolean',
+                                default             => 'text',
+                            };
+                        }
+                    } else {
+                        // Empty list, default to array of strings
+                        $node['type'] = 'array';
+                        $node['isList'] = false;
+                        $node['childType'] = 'text';
+                    }
+                } else {
+                    // Associative array (object)
+                    $node['type'] = 'object';
+                    $node['children'] = $this->buildSchemaFromJson($value);
+                }
+            }
+
+            $schema[] = $node;
+        }
+
+        // Must run through formatSchemaNodes to convert 'children' arrays into UI 'schema' format!
+        return $this->formatSchemaNodes($schema);
     }
 }

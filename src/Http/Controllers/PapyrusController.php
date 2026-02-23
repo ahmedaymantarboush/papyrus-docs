@@ -14,7 +14,21 @@ class PapyrusController extends Controller
      */
     public function index()
     {
-        return view('papyrus::index');
+        $papyrusConfig = [
+            'title' => config('papyrus.title', 'Papyrus - Laravel API Docs'),
+            'baseUrl' => config('papyrus.base_url', request()->getSchemeAndHttpHost()),
+            'path' => config('papyrus.url', config('papyrus.path', 'papyrus-docs')),
+            'headers' => config('papyrus.default_headers', []),
+            'defaultResponses' => config('papyrus.default_responses', []),
+            'groupByPatterns' => config('papyrus.group_by.uri_patterns', []),
+            'debug' => config('papyrus.debug', false),
+            'faviconUrl' => route('papyrus.favicon', ['file' => 'android-chrome-192x192.png']),
+        ];
+
+        return response()->view('papyrus::index', compact('papyrusConfig'))
+            ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+            ->header('Pragma', 'no-cache')
+            ->header('Expires', 'Sat, 01 Jan 2000 00:00:00 GMT');
     }
 
     /**
@@ -30,9 +44,12 @@ class PapyrusController extends Controller
 
         $schema = $generator->scan();
 
-        $response = response()->json($schema)
-            ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
-            ->header('Pragma', 'no-cache');
+        $response = response()->json($schema);
+
+        // Add no-cache headers to ensure schema is never cached
+        $response->headers->set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+        $response->headers->set('Pragma', 'no-cache');
+        $response->headers->set('Expires', 'Sat, 01 Jan 2000 00:00:00 GMT');
 
         // Append debug metadata as headers if enabled
         if (config('papyrus.debug', false)) {

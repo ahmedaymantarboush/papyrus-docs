@@ -15,6 +15,7 @@ class TestCase extends Orchestra
     protected function getPackageProviders($app)
     {
         return [
+            \AhmedTarboush\PapyrusDocs\PapyrusApplicationServiceProvider::class,
             PapyrusServiceProvider::class,
         ];
     }

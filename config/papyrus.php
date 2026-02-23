@@ -94,6 +94,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Visible Matching Routes
+    |--------------------------------------------------------------------------
+    |
+    | An array of regex patterns. If not empty, ONLY routes whose URI matches
+    | one of these patterns will be included in the documentation.
+    | Uses preg_match — patterns must include delimiters.
+    |
+    */
+
+    'visible_matching' => [],
+
+    /*
+    |--------------------------------------------------------------------------
     | Hide Matching Routes
     |--------------------------------------------------------------------------
     |

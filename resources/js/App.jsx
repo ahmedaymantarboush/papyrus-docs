@@ -60,8 +60,8 @@ export default function App() {
     const [fieldConfig, setFieldConfig] = useLocalStorage('papyrus_field_types', {});
 
     /* ── UI State ────────────────────────────────────────────────── */
-    const [menuOpen, setMenuOpen] = useState(false);
-    const [playgroundOpen, setPlaygroundOpen] = useState(false);
+    const [menuOpen, setMenuOpen] = useState(window.innerWidth >= 1024);
+    const [playgroundOpen, setPlaygroundOpen] = useState(window.innerWidth >= 1024);
     const [settingsOpen, setSettingsOpen] = useState(false);
     /* ── Execution Trigger ───────────────────────────────────────── */
     const executeRef = useRef(null);
@@ -77,6 +77,7 @@ export default function App() {
         filterMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
         filterNameRegex: '',
         filterControllerRegex: '',
+        filterUriRegex: '',
         saveResponses: false,
         globalHeaders: false,
         headerEditorMode: 'form'
@@ -100,7 +101,8 @@ export default function App() {
        SCHEMA FETCH & PROCESSING
        ══════════════════════════════════════════════════════════════ */
     useEffect(() => {
-        const docUrl = PC().fetchUrl || '/papyrus-docs/api/schema';
+        const routePath = PC().path ? `/${PC().path.replace(/^\/|\/$/g, '')}` : '/papyrus-docs';
+        const docUrl = PC().fetchUrl || `${routePath}/api/schema`;
         fetch(docUrl)
             .then(r => { if (!r.ok) throw new Error('Schema load failed'); return r.json(); })
             .then(data => { setRawSchema(data); setLoading(false); })
@@ -113,9 +115,10 @@ export default function App() {
         let allRoutes = rawSchema.flatMap(g => g.routes);
 
         // Filter: regex + method
-        let nameRe = null, ctrlRe = null;
+        let nameRe = null, ctrlRe = null, uriRe = null;
         try { if (settings.filterNameRegex?.trim()) nameRe = new RegExp(settings.filterNameRegex.trim(), 'i'); } catch (e) {}
         try { if (settings.filterControllerRegex?.trim()) ctrlRe = new RegExp(settings.filterControllerRegex.trim(), 'i'); } catch (e) {}
+        try { if (settings.filterUriRegex?.trim()) uriRe = new RegExp(settings.filterUriRegex.trim(), 'i'); } catch (e) {}
 
         const allowedMethods = Array.isArray(settings.filterMethods) ? settings.filterMethods : ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
 
@@ -123,6 +126,7 @@ export default function App() {
             if (r.methods && !r.methods.some(m => allowedMethods.includes(m))) return false;
             if (nameRe && (!r.routeName || !nameRe.test(r.routeName))) return false;
             if (ctrlRe && (!r.controllerName || !ctrlRe.test(r.controllerName))) return false;
+            if (uriRe && (!r.uri || !uriRe.test(r.uri))) return false;
             return true;
         });
 
@@ -336,9 +340,9 @@ export default function App() {
     return (
         <div className="h-[100dvh] max-h-[100dvh] w-screen overflow-hidden bg-slate-50 dark:bg-[#0B1120] text-slate-800 dark:text-slate-300 flex flex-col transition-colors duration-200">
             {/* ── TOP NAVBAR (Fixed) ── */}
-            <header className="fixed top-0 inset-x-0 h-14 bg-white dark:bg-[#0B1120] border-b border-slate-200 dark:border-slate-800/60 flex items-center justify-between px-4 z-50">
+            <header className="fixed top-0 inset-x-0 h-14 bg-white dark:bg-[#0B1120] border-b border-slate-200 dark:border-slate-800/60 flex items-center justify-between px-4 z-[70]">
                 <div className="flex items-center gap-3">
-                    <button onClick={() => { setMenuOpen(prev => !prev); setPlaygroundOpen(false); }} className="lg:hidden text-slate-500 hover:text-amber-500 transition-colors">
+                    <button onClick={() => { setMenuOpen(prev => !prev); setPlaygroundOpen(false); }} className="text-slate-500 hover:text-amber-500 transition-colors">
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
                     </button>
                     <h1 className="font-brand font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
@@ -350,11 +354,11 @@ export default function App() {
                 <div className="flex items-center gap-2 sm:gap-4">
                     {/* Export Buttons */}
                     <div className="hidden md:flex items-center gap-2 mr-2">
-                        <a href="/papyrus-docs/export/openapi" download className="px-3 py-1.5 text-[11px] font-semibold tracking-wide bg-slate-100 dark:bg-slate-800/50 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 rounded border border-slate-200 dark:border-slate-700/50 transition-colors flex items-center gap-1.5">
+                        <a href={`${PC().path ? '/' + PC().path.replace(/^\/|\/$/g, '') : '/papyrus-docs'}/export/openapi`} download className="px-3 py-1.5 text-[11px] font-semibold tracking-wide bg-slate-100 dark:bg-slate-800/50 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 rounded border border-slate-200 dark:border-slate-700/50 transition-colors flex items-center gap-1.5">
                             <svg className="w-3.5 h-3.5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                             OpenAPI / Swagger
                         </a>
-                        <a href="/papyrus-docs/export/postman" download className="px-3 py-1.5 text-[11px] font-semibold tracking-wide bg-slate-100 dark:bg-slate-800/50 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 rounded border border-slate-200 dark:border-slate-700/50 transition-colors flex items-center gap-1.5">
+                        <a href={`${PC().path ? '/' + PC().path.replace(/^\/|\/$/g, '') : '/papyrus-docs'}/export/postman`} download className="px-3 py-1.5 text-[11px] font-semibold tracking-wide bg-slate-100 dark:bg-slate-800/50 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 rounded border border-slate-200 dark:border-slate-700/50 transition-colors flex items-center gap-1.5">
                             <svg className="w-3.5 h-3.5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                             Postman
                         </a>
@@ -371,7 +375,12 @@ export default function App() {
 
                     {/* Settings Button */}
                     <button onClick={() => setSettingsOpen(true)} className="p-1.5 text-slate-500 hover:text-amber-500 dark:hover:text-amber-400 transition-colors rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Settings">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31-.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                    </button>
+
+                    {/* Desktop Playground Toggle */}
+                    <button onClick={() => setPlaygroundOpen(prev => !prev)} className="hidden lg:flex p-1.5 text-slate-500 hover:text-amber-500 dark:hover:text-amber-400 transition-colors rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 ml-1" title="Toggle Try It Panel">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 4v16" /></svg>
                     </button>
 
                     {/* Mobile Playground Toggle */}
@@ -384,9 +393,9 @@ export default function App() {
                 <Sidebar schema={schema} activeId={activeId} onSelect={handleRouteSelect} open={menuOpen} onClose={() => setMenuOpen(false)} width={sidebarWidth} setWidth={setSidebarWidth} />
                 <main className="flex-1 overflow-y-auto scroll-smooth custom-scrollbar relative bg-white dark:bg-[#0B1120]">
                     <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-amber-500/40 to-transparent z-10" />
-                    <DocSection route={activeRoute} formTree={formTree} setFormTree={setFormTree} queryTree={queryTree} setQueryTree={setQueryTree} pathVals={pathVals} onPathChange={onPathChange} schema={schema} onSelect={handleRouteSelect} onExecuteRequest={() => { setPlaygroundOpen(true); setMenuOpen(false); if (executeRef.current) executeRef.current(); }} executing={executing} onReset={resetFormState} />
+                    <DocSection route={activeRoute} formTree={formTree} setFormTree={setFormTree} queryTree={queryTree} setQueryTree={setQueryTree} pathVals={pathVals} onPathChange={onPathChange} schema={schema} onSelect={handleRouteSelect} onExecuteRequest={() => { setPlaygroundOpen(true); window.innerWidth < 1024 && setMenuOpen(false); if (executeRef.current) executeRef.current(); }} executing={executing} onReset={resetFormState} />
                 </main>
-                <Playground route={activeRoute} formValues={preparedForm} queryValues={preparedQuery} pathVals={pathVals} open={playgroundOpen} onClose={() => setPlaygroundOpen(false)} customHeaders={customHeaders} setCustomHeaders={setCustomHeaders} settings={settings} setSettings={setSettings} width={playgroundWidth} setWidth={setPlaygroundWidth} onExecuteRef={executeRef} executing={executing} setExecuting={setExecuting} />
+                <Playground route={activeRoute} formValues={preparedForm} queryValues={preparedQuery} pathVals={pathVals} open={playgroundOpen} onClose={() => setPlaygroundOpen(false)} customHeaders={customHeaders} setCustomHeaders={setCustomHeaders} settings={settings} setSettings={setSettings} width={playgroundWidth} setWidth={setPlaygroundWidth} onExecuteRef={executeRef} executing={executing} setExecuting={setExecuting} formTree={formTree} setFormTree={setFormTree} queryTree={queryTree} setQueryTree={setQueryTree} onPathChange={onPathChange} />
             </div>
 
             <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} settings={settings} setSettings={setSettings} />

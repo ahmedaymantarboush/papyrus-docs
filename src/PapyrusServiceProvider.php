@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Gate;
  *   - Merge and publish configuration
  *   - Register routes (conditionally, based on `enabled` config)
  *   - Register views
- *   - Define the default authorization gate
+ *   - Provide the initial stub for the Application Service Provider
  *   - Register the PapyrusGenerator as a singleton
  *   - Register artisan commands
  */
@@ -41,20 +41,12 @@ class PapyrusServiceProvider extends ServiceProvider
             __DIR__ . '/../config/papyrus.php' => config_path('papyrus.php'),
         ], 'papyrus-config');
 
-        // 4. Publish Assets (for production deployment)
-        // Copies built assets from the package's dist/build folder
-        // to the application's public/vendor folder
+        // 4. Publish Service Provider
         $this->publishes([
-            __DIR__ . '/../dist/build' => public_path('vendor/papyrus-docs'),
-        ], 'papyrus-assets');
+            __DIR__ . '/../stubs/PapyrusServiceProvider.stub' => app_path('Providers/PapyrusServiceProvider.php'),
+        ], 'papyrus-provider');
 
-        // 5. Define Default Gate
-        // Override this gate in your AuthServiceProvider for production
-        Gate::define('viewPapyrusDocs', function ($user = null) {
-            return app()->environment('local', 'testing', 'development');
-        });
-
-        // 6. Register Commands
+        // 5. Register Commands
         if ($this->app->runningInConsole()) {
             $this->commands([
                 Console\Commands\PapyrusInstallCommand::class,

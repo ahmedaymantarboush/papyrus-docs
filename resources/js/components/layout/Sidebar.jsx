@@ -70,7 +70,7 @@ export default function Sidebar({ schema, activeId, onSelect, open, onClose, wid
                 onClick={onClose}
             />
             {/* Sidebar positioning: Below navbar (top-14), height calc to bottom. */}
-            <aside data-panel="sidebar" ref={sidebarRef} style={{ width: width + 'px' }} className={`fixed top-14 left-0 h-[calc(100vh-3.5rem)] z-[60] bg-slate-50 dark:bg-[#0B1120] border-r border-slate-200 dark:border-slate-800/60 flex flex-col transition-transform duration-300 ease-out lg:static lg:translate-x-0 lg:flex ${open ? 'translate-x-0 shadow-2xl shadow-black/40' : '-translate-x-full lg:translate-x-0'}`}>
+            <aside data-panel="sidebar" ref={sidebarRef} style={{ width: width + 'px', marginLeft: open ? '0px' : `-${width}px` }} className={`fixed top-14 left-0 h-[calc(100vh-3.5rem)] z-[60] shrink-0 bg-slate-50 dark:bg-[#0B1120] border-r border-slate-200 dark:border-slate-800/60 flex flex-col transition-all duration-300 ease-in-out lg:static ${open ? 'shadow-2xl shadow-black/40' : ''}`}>
                 <div onMouseDown={startResizing} className="absolute top-0 right-0 bottom-0 w-2 cursor-col-resize hover:bg-amber-500/20 active:bg-amber-500/40 z-50 transition-colors" />
                 
                 <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800/40 shrink-0">
@@ -100,7 +100,7 @@ export default function Sidebar({ schema, activeId, onSelect, open, onClose, wid
                                         return (
                                             <li key={id}>
                                                 <button
-                                                    onClick={() => { onSelect(route); onClose(); }}
+                                                    onClick={() => { onSelect(route); if (window.innerWidth < 1024) onClose(); }}
                                                     className={`w-full text-left px-3 py-2 rounded-md transition-all duration-150 flex flex-col items-start gap-1.5 border-l-2 ${active ? 'bg-amber-500/10 dark:bg-amber-500/[0.08] text-amber-600 dark:text-amber-400 border-amber-500' : 'text-slate-600 dark:text-slate-400 border-transparent hover:text-slate-900 dark:hover:text-slate-200 hover:bg-black/[0.03] dark:hover:bg-white/[0.03]'}`}
                                                 >
                                                     <div className="flex items-start gap-2 w-full">

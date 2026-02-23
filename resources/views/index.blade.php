@@ -32,20 +32,11 @@
 
     {{-- Config Injection --}}
     <script>
-        window.PapyrusConfig = {
-            title: @json(config('papyrus.title', 'Papyrus - Laravel API Docs')),
-            baseUrl: @json(config('papyrus.base_url', request()->getSchemeAndHttpHost())),
-            headers: @json(config('papyrus.default_headers', [])),
-            defaultResponses: @json(config('papyrus.default_responses', [])),
-            groupByPatterns: @json(config('papyrus.group_by.uri_patterns', [])),
-            debug: @json(config('papyrus.debug', false)),
-            faviconUrl: "{{ route('papyrus.favicon', ['file' => 'android-chrome-192x192.png']) }}"
-        };
+        window.PapyrusConfig = @json($papyrusConfig);
     </script>
 
     @php
     $hotFile = __DIR__ . '/../../dist/hot';
-    $packageAssetsPath = 'vendor/papyrus-docs';
     @endphp
 
     @if(file_exists($hotFile))
@@ -57,33 +48,21 @@
     <link rel="stylesheet" href="{{ $viteHost }}/resources/css/app.css">
     <script type="module" src="{{ $viteHost }}/resources/js/App.jsx"></script>
     @else
-    {{-- CONTROLLER BASED ASSET SERVING --}}
+    {{-- CONTROLLER BASED ASSET SERVING (Fallback if not published) --}}
     @php
     $manifestPath = __DIR__ . '/../../dist/build/.vite/manifest.json';
     $manifest = file_exists($manifestPath) ? json_decode(file_get_contents($manifestPath), true) : [];
-
-    $cssFile = $manifest['resources/css/app.css']['file'] ?? 'assets/app.css';
-    $jsFile = $manifest['resources/js/App.jsx']['file'] ?? 'assets/App.js';
-
-    // Remove 'assets/' prefix since our route handles it, or adjust logic
-    // The manifest returns "assets/app.css". Our file system has "dist/build/assets/app.css".
-    // Our route is /assets/{path}. Controller looks in dist/build/assets/{path}.
-    // So we need to strip "assets/" from the manifest config if the controller expects just the filename,
-    // OR make the controller look in "dist/build/" and pass "assets/app.css".
-
-    // Let's go with: Controller serves "dist/build/assets/{filename}".
-    // Manifest gives "assets/filename.css".
-    // So we take basename of the manifest file.
-    $cssFile = basename($cssFile);
-    $jsFile = basename($jsFile);
-
-    // Compute cache-busting version from the actual generated package dist files,
-    // rather than the public published folder, because the controller serves from here!
+    $cssFile = basename($manifest['resources/css/app.css']['file'] ?? 'app.css');
+    $jsFile = basename($manifest['resources/js/App.jsx']['file'] ?? 'App.js');
     $cssPath = __DIR__ . '/../../dist/build/assets/' . $cssFile;
     $jsPath = __DIR__ . '/../../dist/build/assets/' . $jsFile;
 
-    $cssV = file_exists($cssPath) ? filemtime($cssPath) : time();
-    $jsV = file_exists($jsPath) ? filemtime($jsPath) : time();
+
+    // $cssV = file_exists($cssPath) ? filemtime($cssPath) : time();
+    // $jsV = file_exists($jsPath) ? filemtime($jsPath) : time();
+
+    $cssV = time();
+    $jsV = time();
     @endphp
     <link rel="stylesheet" href="{{ route('papyrus.assets', ['path' => $cssFile]) }}?v={{ $cssV }}">
     <script type="module" src="{{ route('papyrus.assets', ['path' => $jsFile]) }}?v={{ $jsV }}"></script>

@@ -3,7 +3,9 @@ import HeadersEditor from '../headers/HeadersEditor';
 import { generateSnippet } from '../../helpers/snippets';
 import { prepareRequest } from '../../helpers/request';
 import { JsonEditor, githubLightTheme, githubDarkTheme } from 'json-edit-react';
-import { rid, pathParams, SNIPPET_LANGS, PC } from '../../constants';
+import { rid, pathParams, SNIPPET_LANGS, PC, inputCls } from '../../constants';
+import DynamicField from '../form/DynamicField';
+import RawJsonEditor from '../json/RawJsonEditor';
 
 /**
  * Playground — Right-column panel for API testing.
@@ -15,8 +17,10 @@ import { rid, pathParams, SNIPPET_LANGS, PC } from '../../constants';
  * Config consumption: defaultResponses from PapyrusConfig.
  * 
  */
-export default function Playground({ route, formValues, queryValues, pathVals, open, onClose, customHeaders, setCustomHeaders, settings, setSettings, width, setWidth, onExecuteRef, executing, setExecuting }) {
+export default function Playground({ route, formValues, queryValues, pathVals, open, onClose, customHeaders, setCustomHeaders, settings, setSettings, width, setWidth, onExecuteRef, executing, setExecuting, formTree, setFormTree, queryTree, setQueryTree, onPathChange }) {
     const [tab, setTab] = useState('snippet');
+    const [formTab, setFormTab] = useState('form');
+    const [queryTab, setQueryTab] = useState('form');
     const [lang, setLang] = useState('curl');
     const [response, setResponse] = useState(null);
     const [isFromCache, setIsFromCache] = useState(false);
@@ -149,6 +153,7 @@ export default function Playground({ route, formValues, queryValues, pathVals, o
     }, [onExecuteRef, execute]);
 
     const tabs = [
+        { id: 'params', label: 'Params', mobileOnly: true },
         { id: 'headers', label: 'Headers' },
         { id: 'snippet', label: 'Snippet' },
         { id: 'response', label: 'Response', dot: response ? (response.status >= 200 && response.status < 300 ? 'bg-emerald-400' : 'bg-rose-400') : null },
@@ -159,7 +164,7 @@ export default function Playground({ route, formValues, queryValues, pathVals, o
     return (
         <>
             {open && <div className="fixed inset-0 bg-black/60 z-40 lg:hidden backdrop-blur-sm" onClick={onClose} />}
-            <aside data-panel="playground" ref={pgRef} style={{ width: width + 'px' }} className={`fixed top-14 right-0 h-[calc(100vh-3.5rem)] shrink-0 max-w-full z-40 bg-slate-50 dark:bg-[#0F172A] border-l border-slate-200 dark:border-slate-800/60 flex flex-col transform transition-transform duration-300 ease-out lg:static lg:translate-x-0 ${open ? 'translate-x-0 shadow-2xl shadow-black/30' : 'translate-x-full lg:translate-x-0'}`}>
+            <aside data-panel="playground" ref={pgRef} style={{ width: width + 'px', marginRight: open ? '0px' : `-${width}px` }} className={`fixed top-14 right-0 h-[calc(100vh-3.5rem)] shrink-0 max-w-full z-40 bg-slate-50 dark:bg-[#0F172A] border-l border-slate-200 dark:border-slate-800/60 flex flex-col transition-all duration-300 ease-in-out lg:static ${open ? 'shadow-2xl shadow-black/30' : ''}`}>
                 <div onMouseDown={startResizing} className="absolute top-0 left-0 bottom-0 w-2 cursor-col-resize hover:bg-amber-500/20 active:bg-amber-500/40 z-50 transition-colors -ml-1" />
 
                 <div className="shrink-0 border-b border-slate-200 dark:border-slate-800/40 flex items-center gap-2 px-3 py-3 object-top">
@@ -168,7 +173,7 @@ export default function Playground({ route, formValues, queryValues, pathVals, o
                     </button>
                     <div className="flex-1 flex bg-slate-100 dark:bg-slate-900/60 p-0.5 rounded-lg border border-slate-200 dark:border-slate-800/60">
                         {tabs.map(t => (
-                            <button key={t.id} onClick={() => setTab(t.id)} className={`flex-1 py-1.5 text-[11px] font-medium rounded-md transition-all flex items-center justify-center gap-1.5 ${tab === t.id ? 'bg-white dark:bg-slate-800 text-amber-600 dark:text-amber-400 shadow-sm border border-slate-200/50 dark:border-transparent' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>
+                            <button key={t.id} onClick={() => setTab(t.id)} className={`flex-1 py-1.5 text-[11px] font-medium rounded-md transition-all flex items-center justify-center gap-1.5 ${t.mobileOnly ? 'lg:hidden' : ''} ${tab === t.id ? 'bg-white dark:bg-slate-800 text-amber-600 dark:text-amber-400 shadow-sm border border-slate-200/50 dark:border-transparent' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>
                                 {t.dot && <span className={`w-1.5 h-1.5 rounded-full ${t.dot}`} />}
                                 {t.label}
                             </button>
@@ -181,6 +186,54 @@ export default function Playground({ route, formValues, queryValues, pathVals, o
                         <div className="h-full flex items-center justify-center opacity-20"><span className="text-6xl text-slate-700 font-brand">¶</span></div>
                     ) : (
                         <>
+                            {tab === 'params' && (
+                                <div className="space-y-6">
+                                    {pathParams(route.uri).length > 0 && (
+                                        <div>
+                                            <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3 border-b border-slate-200 dark:border-slate-800/60 pb-1">Path Parameters</h3>
+                                            <div className="space-y-3">
+                                                {pathParams(route.uri).map(({ name, optional }) => (
+                                                    <div key={name} className="flex flex-col gap-1.5">
+                                                        <label className="text-xs font-mono text-amber-600 dark:text-amber-400">{name} {optional ? '' : <span className="text-rose-500">*</span>}</label>
+                                                        <input type="text" className={inputCls} placeholder={`{${name}}`} value={pathVals[name] || ''} onChange={e => onPathChange && onPathChange(name, e.target.value)} />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {queryTree && (
+                                        <div>
+                                            {queryTree.length > 0 && <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3 border-b border-slate-200 dark:border-slate-800/60 pb-1">Query Parameters</h3>}
+                                            <div className="space-y-2 mt-2">
+                                                {queryTree.length > 0 && <RawJsonEditor formTree={queryTree} setFormTree={setQueryTree} activeTab={queryTab} setActiveTab={setQueryTab} hideHeader={true} />}
+                                                {queryTab === 'form' && queryTree.map((node, i) => (
+                                                    <DynamicField key={node.key || i} node={node} onChange={n => { const nt = [...queryTree]; nt[i] = n; setQueryTree && setQueryTree(nt); }} onRemove={() => setQueryTree && setQueryTree(queryTree.filter((_, idx) => idx !== i))} excludeTypes={['file']} />
+                                                ))}
+                                                {queryTab === 'form' && (
+                                                    <button onClick={() => setQueryTree && setQueryTree([...queryTree, { key: `param_${queryTree.length}`, type: 'text', value: '', enabled: true }])} className="text-[10px] text-amber-500 font-bold hover:text-amber-400 mt-2 flex items-center gap-1 border border-amber-500/20 bg-amber-500/10 px-2 py-1 rounded w-max"><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>ADD QUERY {queryTree.length === 0 && 'PARAM'}</button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {formTree && (
+                                        <div>
+                                            {formTree.length > 0 && <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3 border-b border-slate-200 dark:border-slate-800/60 pb-1">Request Payload</h3>}
+                                            <div className="space-y-2 mt-2">
+                                                {formTree.length > 0 && <RawJsonEditor formTree={formTree} setFormTree={setFormTree} activeTab={formTab} setActiveTab={setFormTab} hideHeader={true} />}
+                                                {formTab === 'form' && formTree.map((node, i) => (
+                                                    <DynamicField key={node.key || i} node={node} onChange={n => { const nt = [...formTree]; nt[i] = n; setFormTree && setFormTree(nt); }} onRemove={() => setFormTree && setFormTree(formTree.filter((_, idx) => idx !== i))} />
+                                                ))}
+                                                {formTab === 'form' && (
+                                                    <button onClick={() => setFormTree && setFormTree([...formTree, { key: `new_prop_${formTree.length}`, type: 'text', value: '', enabled: true }])} className="text-[10px] text-amber-500 font-bold hover:text-amber-400 mt-2 flex items-center gap-1 border border-amber-500/20 bg-amber-500/10 px-2 py-1 rounded w-max"><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>ADD BODY {formTree.length === 0 && 'PROPERTY'}</button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
                             {tab === 'snippet' && (
                                 <div className="space-y-4">
                                     <div className="flex gap-3 border-b border-slate-200 dark:border-slate-800/60 pb-2 overflow-x-auto">

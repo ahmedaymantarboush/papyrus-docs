@@ -32,23 +32,37 @@ export default function SettingsModal({ open, onClose, settings, setSettings }) 
                 <div className="p-5 overflow-y-auto space-y-6">
                     <div className="space-y-4">
                         <h3 className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest border-b border-slate-200 dark:border-slate-800 pb-2">Sorting & Grouping</h3>
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-6">
                             <div>
-                                <label className="block text-xs font-mono text-slate-500 dark:text-slate-400 mb-1.5">Group By</label>
-                                <select className={selectCls} value={settings.groupBy} onChange={e => update('groupBy', e.target.value)}>
-                                    <option value="default">Default (No explicit group)</option>
-                                    <option value="apiName">API Name (Route Prefix)</option>
-                                    <option value="controllerName">Controller Name</option>
-                                    <option value="uriPatterns">URI Patterns (Config)</option>
-                                </select>
+                                <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-2.5 uppercase tracking-wide">Group By</label>
+                                <div className="flex flex-wrap gap-2">
+                                    {[
+                                        { value: 'default', label: 'Default' },
+                                        { value: 'apiName', label: 'API Name' },
+                                        { value: 'controllerName', label: 'Controller' },
+                                        { value: 'uriPatterns', label: 'URI Patterns' }
+                                    ].map(opt => (
+                                        <label key={opt.value} className={`flex items-center gap-2 px-3.5 py-2 rounded-full border cursor-pointer transition-all ${settings.groupBy === opt.value ? 'bg-amber-500 border-amber-500 text-white shadow-sm' : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-amber-500/50 hover:text-amber-600 dark:hover:text-amber-400'}`}>
+                                            <input type="radio" name="groupBy" value={opt.value} checked={settings.groupBy === opt.value} onChange={e => update('groupBy', e.target.value)} className="sr-only" />
+                                            <span className="text-[12px] font-medium">{opt.label}</span>
+                                        </label>
+                                    ))}
+                                </div>
                             </div>
                             <div>
-                                <label className="block text-xs font-mono text-slate-500 dark:text-slate-400 mb-1.5">Sort By</label>
-                                <select className={selectCls} value={settings.sortBy} onChange={e => update('sortBy', e.target.value)}>
-                                    <option value="default">Name (Title / Endpoint)</option>
-                                    <option value="routeName">Laravel Route Name</option>
-                                    <option value="method">HTTP Method</option>
-                                </select>
+                                <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-2.5 uppercase tracking-wide">Sort By</label>
+                                <div className="flex flex-wrap gap-2">
+                                    {[
+                                        { value: 'default', label: 'Name (Title)' },
+                                        { value: 'routeName', label: 'Route Name' },
+                                        { value: 'method', label: 'HTTP Method' }
+                                    ].map(opt => (
+                                        <label key={opt.value} className={`flex items-center gap-2 px-3.5 py-2 rounded-full border cursor-pointer transition-all ${settings.sortBy === opt.value ? 'bg-amber-500 border-amber-500 text-white shadow-sm' : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-amber-500/50 hover:text-amber-600 dark:hover:text-amber-400'}`}>
+                                            <input type="radio" name="sortBy" value={opt.value} checked={settings.sortBy === opt.value} onChange={e => update('sortBy', e.target.value)} className="sr-only" />
+                                            <span className="text-[12px] font-medium">{opt.label}</span>
+                                        </label>
+                                    ))}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -84,6 +98,10 @@ export default function SettingsModal({ open, onClose, settings, setSettings }) 
                         <div>
                             <label className="block text-xs font-mono text-slate-500 dark:text-slate-400 mb-1.5">Controller Name (Regex)</label>
                             <input type="text" className={inputCls} placeholder="e.g. UserController" value={settings.filterControllerRegex} onChange={e => update('filterControllerRegex', e.target.value)} />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-mono text-slate-500 dark:text-slate-400 mb-1.5">Route URI (Regex)</label>
+                            <input type="text" className={inputCls} placeholder="e.g. ^api/v1/" value={settings.filterUriRegex || ''} onChange={e => update('filterUriRegex', e.target.value)} />
                         </div>
                     </div>
 
