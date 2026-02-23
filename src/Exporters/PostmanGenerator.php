@@ -202,12 +202,14 @@ class PostmanGenerator
         foreach ($nodes as $node) {
             $key = is_array($node) ? ($node['key'] ?? '') : ($node->key ?? '');
             $type = is_array($node) ? ($node['type'] ?? 'text') : ($node->type ?? 'text');
+            $isList = is_array($node) ? ($node['isList'] ?? false) : ($node->isList ?? false);
 
             if (!$key) continue;
 
             if ($type === 'object') {
                 $schema = is_array($node) ? ($node['schema'] ?? []) : ($node->schema ?? []);
-                $mock[$key] = is_array($schema) ? $this->generateMockJson($schema) : new \stdClass();
+                $mockObj = is_array($schema) ? $this->generateMockJson($schema) : new \stdClass();
+                $mock[$key] = $isList ? [$mockObj] : $mockObj;
             } elseif ($type === 'array') {
                 $mock[$key] = [];
             } else {

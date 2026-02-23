@@ -23,3 +23,21 @@ it('can find registered routes', function () {
     expect($testRoute)->not->toBeNull();
     expect($testRoute->uri)->toBe('api/test-route');
 });
+
+class InvocableController
+{
+    public function __invoke() {}
+}
+
+it('can process invocable controllers', function () {
+    Route::get('/api/invocable-test', InvocableController::class);
+
+    $generator = new PapyrusGenerator();
+    $routes = $generator->scan();
+
+    $allRoutes = $routes->pluck('routes')->flatten();
+    $testRoute = $allRoutes->first(fn($r) => $r->uri === 'api/invocable-test');
+
+    expect($testRoute)->not->toBeNull();
+    expect($testRoute->controllerName)->toBe('InvocableController');
+});

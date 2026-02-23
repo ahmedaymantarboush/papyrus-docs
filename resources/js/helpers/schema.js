@@ -56,8 +56,28 @@ export function buildInitialTree(params, savedNodes = []) {
 
     return baseArray.map(baseItem => {
         // Find corresponding schema or saved data
-        const schemaItem = sArr.length > 0 ? pArr.find(p => p.key === baseItem.key) : baseItem;
-        const savedItem = sArr.length > 0 ? baseItem : sArr.find(sn => sn.key === baseItem.key && sn.key !== undefined);
+        let schemaItem = sArr.length > 0 ? pArr.find(p => p.key === baseItem.key) : baseItem;
+        
+        // If no exact match, try matching pattern keys
+        if (!schemaItem && sArr.length > 0) {
+            schemaItem = pArr.find(p => {
+                if (!p.isPattern) return false;
+                const escaped = p.key.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+                const regexStr = '^' + escaped.replace(/\\\*/g, '.*') + '$';
+                return new RegExp(regexStr).test(baseItem.key);
+            });
+        }
+
+        let savedItem = sArr.length > 0 ? baseItem : sArr.find(sn => sn.key === baseItem.key && sn.key !== undefined);
+
+        // Anti-stale mechanism: if the structural type changed in the backend schema, discard the saved item
+        if (savedItem && schemaItem) {
+            let schemaType = schemaItem.type;
+            if (schemaType === 'object' && schemaItem.isList) schemaType = 'array';
+            if (savedItem.type !== schemaType && (savedItem.type === 'array' || savedItem.type === 'object' || schemaType === 'array' || schemaType === 'object')) {
+                savedItem = undefined;
+            }
+        }
 
         let type = savedItem ? savedItem.type : (schemaItem ? schemaItem.type : 'text');
         let cDef = schemaItem ? schemaItem.childDef : undefined;
@@ -129,7 +149,18 @@ export function hydrateFormTreeFromJson(jsonObj, existingTree = []) {
     if (!jsonObj || typeof jsonObj !== 'object') return existingTree;
 
     return Object.entries(jsonObj).map(([key, val]) => {
-        const existing = existingTree.find(n => n.key === key);
+        let existing = existingTree.find(n => n.key === key);
+        
+        // Anti-stale mechanism for pattern keys during JSON hydrate
+        if (!existing) {
+            existing = existingTree.find(n => {
+                const schemaItem = n.schema || n;
+                if (!schemaItem.isPattern) return false;
+                const escaped = (schemaItem.key || n.key).replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+                const regexStr = '^' + escaped.replace(/\\\*/g, '.*') + '$';
+                return new RegExp(regexStr).test(key);
+            });
+        }
 
         if (val === null || val === undefined) {
             return { key, type: 'text', value: '', enabled: true, schema: existing?.schema, children: undefined };

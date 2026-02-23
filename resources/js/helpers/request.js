@@ -1,4 +1,4 @@
-import { pathParams } from '../constants';
+import { pathParams, PC } from '../constants';
 
 /* ─── Cast scalar values for JSON body ──────────────────────────────────── */
 function castScalar(v, type) {
@@ -66,7 +66,7 @@ export function compileTreeToPayload(nodes) {
  * header is DYNAMICALLY STRIPPED so the browser sets the correct
  * multipart/form-data boundary automatically.
  */
-export function prepareRequest(route, formValues, pathVals, customHeaders) {
+export function prepareRequest(route, formValues, pathVals, customHeaders, queryValues = {}) {
     const method = route.methods[0];
     const isGet = method === 'GET' || method === 'HEAD';
 
@@ -81,7 +81,25 @@ export function prepareRequest(route, formValues, pathVals, customHeaders) {
         }
     });
 
-    let url = '/' + urlPath.replace(/^\//, '');
+    let baseUrl = PC().baseUrl || '';
+    let url = baseUrl + '/' + urlPath.replace(/^\//, '');
+
+    // ── Build query string from explicit query params + GET body ──
+    const qp = new URLSearchParams();
+    const flatQ = (obj, pre = '') => {
+        Object.entries(obj).forEach(([k, v]) => {
+            const key = pre ? `${pre}[${k}]` : k;
+            if (v == null) return;
+            if (Array.isArray(v)) v.forEach((it, i) => typeof it === 'object' && it && !(it instanceof File) ? flatQ(it, `${key}[${i}]`) : qp.append(`${key}[${i}]`, it));
+            else if (typeof v === 'object' && !(v instanceof File)) flatQ(v, key);
+            else qp.append(key, v);
+        });
+    };
+
+    // Always add explicit query params
+    if (queryValues && typeof queryValues === 'object' && Object.keys(queryValues).length > 0) {
+        flatQ(queryValues);
+    }
 
     // Walk the form values tree to detect any File instances
     let hasFile = false;
@@ -99,19 +117,8 @@ export function prepareRequest(route, formValues, pathVals, customHeaders) {
     let body;
 
     if (isGet) {
-        const params = new URLSearchParams();
-        const flat = (obj, pre = '') => {
-            Object.entries(obj).forEach(([k, v]) => {
-                const key = pre ? `${pre}[${k}]` : k;
-                if (v === '' || v == null) return;
-                if (Array.isArray(v)) v.forEach((it, i) => typeof it === 'object' && it && !(it instanceof File) ? flat(it, `${key}[${i}]`) : params.append(`${key}[${i}]`, it));
-                else if (typeof v === 'object' && !(v instanceof File)) flat(v, key);
-                else params.append(key, v);
-            });
-        };
-        flat(formValues);
-        const qs = params.toString();
-        if (qs) url += '?' + qs;
+        // For GET: body params also go as query string
+        flatQ(formValues);
     } else if (hasFile) {
         const fd = new FormData();
         const append = (obj, pre = '') => {
@@ -152,6 +159,10 @@ export function prepareRequest(route, formValues, pathVals, customHeaders) {
         }
         body = JSON.stringify(formValues);
     }
+
+    // Append query string to URL
+    const qs = qp.toString();
+    if (qs) url += '?' + qs;
 
     return { url, method, hdrs, body };
 }

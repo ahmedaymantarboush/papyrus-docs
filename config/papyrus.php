@@ -54,6 +54,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Base URL
+    |--------------------------------------------------------------------------
+    |
+    | The base URL used for API requests in the frontend playground and snippets.
+    | If not set, it defaults to the APP_URL. The frontend will also fallback
+    | to the current domain if this is left empty.
+    |
+    */
+
+    'base_url' => env('PAPYRUS_BASE_URL', env('APP_URL')),
+
+    /*
+    |--------------------------------------------------------------------------
     | Middleware
     |--------------------------------------------------------------------------
     |
@@ -63,7 +76,7 @@ return [
     |
     */
 
-    'middlewares' => ['web'],
+    'middlewares' => ['web', 'can:viewPapyrusDocs'],
 
     /*
     |--------------------------------------------------------------------------

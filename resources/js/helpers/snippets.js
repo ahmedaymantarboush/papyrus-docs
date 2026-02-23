@@ -1,4 +1,4 @@
-import { pathParams } from '../constants';
+import { pathParams, PC } from '../constants';
 
 /**
  * generateSnippet — Produces code snippets for curl, PHP, JS, and Python.
@@ -6,8 +6,9 @@ import { pathParams } from '../constants';
  * Handles both JSON and multipart/form-data payloads.
  * File values are represented as placeholders.
  */
-export function generateSnippet(lang, route, formValues, pathVals, headerObj = {}) {
+export function generateSnippet(lang, route, formValues, pathVals, headerObj = {}, queryValues = {}) {
     const method = route.methods[0];
+    const isGet = method === 'GET' || method === 'HEAD';
     let p = route.uri;
 
     const pp = pathParams(route.uri);
@@ -20,7 +21,29 @@ export function generateSnippet(lang, route, formValues, pathVals, headerObj = {
         }
     });
 
-    const url = `{{base_url}}/${p.replace(/^\//, '')}`;
+    let baseUrl = PC().baseUrl || '{{base_url}}';
+    let url = `${baseUrl}/${p.replace(/^\//, '')}`;
+
+    // ── Build query string ──
+    const qp = new URLSearchParams();
+    const flatQ = (obj, pre = '') => {
+        Object.entries(obj).forEach(([k, v]) => {
+            const key = pre ? `${pre}[${k}]` : k;
+            if (v == null) return;
+            if (Array.isArray(v)) v.forEach((it, i) => typeof it === 'object' && it && !(it instanceof File) ? flatQ(it, `${key}[${i}]`) : qp.append(`${key}[${i}]`, it));
+            else if (typeof v === 'object' && !(v instanceof File)) flatQ(v, key);
+            else qp.append(key, v);
+        });
+    };
+
+    if (queryValues && typeof queryValues === 'object' && Object.keys(queryValues).length > 0) {
+        flatQ(queryValues);
+    }
+
+    if (isGet) flatQ(formValues);
+
+    const qs = qp.toString();
+    if (qs) url += '?' + qs;
 
     let hasFile = false;
     Object.values(formValues).forEach(v => { if (v instanceof File) hasFile = true; });
@@ -31,7 +54,6 @@ export function generateSnippet(lang, route, formValues, pathVals, headerObj = {
         else if (v !== '' && v != null) safe[k] = v;
     });
     const json = JSON.stringify(safe, null, 2);
-    const isGet = method === 'GET' || method === 'HEAD';
 
     switch (lang) {
         case 'curl': {

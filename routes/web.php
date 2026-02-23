@@ -24,8 +24,7 @@ Route::group([
 
     // The UI
     Route::get('/', [PapyrusController::class, 'index'])
-        ->name('papyrus.index')
-        ->middleware('can:viewPapyrusDocs'); // Gate check
+        ->name('papyrus.index');
 
     // The Internal API
     Route::get('/api/schema', [PapyrusController::class, 'schema'])

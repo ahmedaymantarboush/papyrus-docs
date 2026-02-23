@@ -78,12 +78,20 @@ class PapyrusGenerator
     {
         $action = $route->getActionName();
 
-        // Skip Closures and non-standard actions
-        if ($action === 'Closure' || ! str_contains($action, '@')) {
+        if ($action === 'Closure') {
             return null;
         }
 
-        [$controller, $method] = explode('@', $action);
+        if (! str_contains($action, '@')) {
+            if (class_exists($action) && method_exists($action, '__invoke')) {
+                $controller = $action;
+                $method = '__invoke';
+            } else {
+                return null;
+            }
+        } else {
+            [$controller, $method] = array_pad(explode('@', $action), 2, null);
+        }
 
         try {
             $reflection = new \ReflectionMethod($controller, $method);
@@ -481,26 +489,94 @@ class PapyrusGenerator
             $className = $type->getName();
             if (is_subclass_of($className, \Illuminate\Foundation\Http\FormRequest::class)) {
                 if (class_exists($className)) {
-                    try {
-                        $request = new $className;
+                    foreach ($methods as $method) {
+                        try {
+                            $request = null;
+                            try {
+                                // Try normal instantiation (resolves dependencies)
+                                $request = app()->make($className);
+                            } catch (\Throwable $t) {
+                                // Fallback to without constructor if DI fails
+                                $reflectionClass = new \ReflectionClass($className);
+                                $request = $reflectionClass->newInstanceWithoutConstructor();
+                            }
 
-                        // Call each configured rules method
-                        foreach ($methods as $method) {
                             if (method_exists($request, $method)) {
                                 $rules = $request->$method();
                                 if (is_array($rules)) {
                                     $params = array_merge($params, $rules);
                                 }
                             }
+                        } catch (\Throwable $t) {
+                            // If execution fails (e.g., accesses $this->route() which is null),
+                            // fallback to static regex parsing of the file
+                            $fallbackRules = $this->parseRulesStatically($className, $method);
+                            $params = array_merge($params, $fallbackRules);
                         }
-                    } catch (\Throwable $t) {
-                        // Ignore instantiation errors (e.g., missing dependencies)
                     }
                 }
             }
         }
 
         return $params;
+    }
+
+    /**
+     * Fallback method to extract rules using Regex if executing rules() throws an exception.
+     * Parses the PHP file statically to find array keys and rule values.
+     *
+     * @param  class-string  $className
+     * @param  string  $methodName
+     * @return array
+     */
+    protected function parseRulesStatically(string $className, string $methodName): array
+    {
+        try {
+            $reflection = new \ReflectionMethod($className, $methodName);
+            $fileName = $reflection->getFileName();
+            if (! $fileName || ! file_exists($fileName)) {
+                return [];
+            }
+
+            $lines = file($fileName);
+            $rules = [];
+
+            $start = $reflection->getStartLine() - 1;
+            $end = $reflection->getEndLine() - 1;
+
+            if ($start < 0 || $end < 0 || $lines === false) {
+                return [];
+            }
+
+            for ($i = $start; $i <= $end; $i++) {
+                $line = trim($lines[$i]);
+
+                // Skip comments
+                if (\Illuminate\Support\Str::startsWith($line, ['//', '#'])) {
+                    continue;
+                }
+
+                // Only pick up rules coded with arrow notation
+                if (! \Illuminate\Support\Str::contains($line, '=>')) {
+                    continue;
+                }
+
+                // Match strings inside single or double quotes
+                if (preg_match_all("/(?:'|\")(.*?)(?:'|\")/", $line, $matches)) {
+                    if (count($matches[1]) >= 2) {
+                        $key = $matches[1][0];
+                        // Get all subsequent matched strings on this line as the rules for this key
+                        $fieldRules = array_slice($matches[1], 1);
+                        // ValidationParser normalizes either string or array, so array is fine.
+                        $rules[$key] = $fieldRules;
+                    }
+                }
+            }
+
+            return $rules;
+        } catch (\Throwable $t) {
+            return [];
+        }
     }
 
     /**
@@ -566,19 +642,22 @@ class PapyrusGenerator
         $result = [];
 
         foreach ($nodes as $node) {
-            // Recursively format children first
-            if (! empty($node['children'])) {
-                $node['children'] = $this->formatSchemaNodes($node['children']);
+            // Check if this node key is a pattern (contains * but is not exactly *)
+            $isPattern = str_contains((string)$node['key'], '*') && $node['key'] !== '*';
+            if ($isPattern) {
+                $node['isPattern'] = true;
             }
 
             // ── Handle wildcard '*' arrays ────────────────────────────
-            if (count($node['children']) === 1 && isset($node['children']['*'])) {
+            if (isset($node['children']['*'])) {
+                // If '*' is present, it suggests an array of items or array of objects.
+                // We prioritize it even if other keys are somehow present (like an explicit rule for index 0).
                 $wildcard = $node['children']['*'];
 
                 if (! empty($wildcard['children'])) {
                     // Wildcard with children → list of objects
                     $node['type']   = 'object';
-                    $node['schema'] = array_values($wildcard['children']);
+                    $node['schema'] = $this->formatSchemaNodes($wildcard['children']);
                     $node['isList'] = true;
                 } else {
                     // Wildcard without children → simple array of scalar type
@@ -586,19 +665,21 @@ class PapyrusGenerator
                     $node['childType'] = $wildcard['type'] ?? 'string';
 
                     // Heuristic: keys containing 'meta' default to object builder
-                    if (str_contains(strtolower($node['key']), 'meta')) {
+                    if (str_contains(strtolower((string)$node['key']), 'meta')) {
                         $node['type']   = 'object';
                         $node['schema'] = [];
                         $node['isList'] = false;
                     }
                 }
 
+                // If there are other named children besides '*', we could append them to schema,
+                // but standard Laravel convention treats `courses.*` as the primary type definition for an array.
                 unset($node['children']);
             }
             // ── Named children → object ──────────────────────────────
             elseif (! empty($node['children'])) {
                 $node['type']   = 'object';
-                $node['schema'] = array_values($node['children']);
+                $node['schema'] = $this->formatSchemaNodes($node['children']);
                 $node['isList'] = false;
                 unset($node['children']);
             }

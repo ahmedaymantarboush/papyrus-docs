@@ -11,8 +11,9 @@ import { inputCls, pathParams, rid, btnSm } from '../../constants';
  * request payload (Visual Form with DynamicField engine + Raw JSON toggle),
  * Reset to Default button, and Prev/Next navigation.
  */
-export default function DocSection({ route, formTree, setFormTree, pathVals, onPathChange, schema, onSelect, onExecuteRequest, executing, onReset }) {
+export default function DocSection({ route, formTree, setFormTree, queryTree, setQueryTree, pathVals, onPathChange, schema, onSelect, onExecuteRequest, executing, onReset }) {
     const [formTab, setFormTab] = useState('form'); // 'form' | 'json'
+    const [queryTab, setQueryTab] = useState('form'); // 'form' | 'json'
 
     if (!route) return <div className="flex-1 flex items-center justify-center text-slate-600"><p className="font-brand italic text-lg opacity-40">Select an endpoint to explore…</p></div>;
 
@@ -86,6 +87,40 @@ export default function DocSection({ route, formTree, setFormTree, pathVals, onP
                     </div>
                 </div>
             )}
+
+            {/* Query Parameters */}
+            <div className="mb-10">
+                <div className="flex items-center justify-between mb-5 pb-2 border-b border-slate-200 dark:border-slate-800/60">
+                    <h3 className="text-xs font-bold text-slate-500 dark:text-slate-300 uppercase tracking-[0.15em]">Query Parameters</h3>
+                </div>
+
+                <RawJsonEditor formTree={queryTree} setFormTree={setQueryTree} activeTab={queryTab} setActiveTab={setQueryTab} />
+
+                {queryTab === 'form' && (
+                    <div className="space-y-1 mt-4">
+                        {queryTree.map((node, i) => (
+                            <DynamicField
+                                key={node.key || i}
+                                node={node}
+                                onChange={n => {
+                                    const nt = [...queryTree];
+                                    nt[i] = n;
+                                    setQueryTree(nt);
+                                }}
+                                onRemove={() => setQueryTree(queryTree.filter((_, idx) => idx !== i))}
+                                excludeTypes={['file']}
+                            />
+                        ))}
+                        <button
+                            onClick={() => setQueryTree([...queryTree, { key: `param_${queryTree.length}`, type: 'text', value: '', enabled: true }])}
+                            className="text-[11px] text-amber-500/80 font-mono font-bold hover:text-amber-400 transition-colors flex items-center gap-1.5 border border-amber-500/20 bg-amber-500/10 px-3 py-1.5 rounded-md w-max mt-3"
+                        >
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
+                            ADD PARAM
+                        </button>
+                    </div>
+                )}
+            </div>
 
             {/* Request Payload */}
             {formTree && formTree.length > 0 && (

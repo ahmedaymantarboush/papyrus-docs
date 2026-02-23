@@ -34,6 +34,7 @@
     <script>
         window.PapyrusConfig = {
             title: @json(config('papyrus.title', 'Papyrus - Laravel API Docs')),
+            baseUrl: @json(config('papyrus.base_url', request()->getSchemeAndHttpHost())),
             headers: @json(config('papyrus.default_headers', [])),
             defaultResponses: @json(config('papyrus.default_responses', [])),
             groupByPatterns: @json(config('papyrus.group_by.uri_patterns', [])),
@@ -76,8 +77,11 @@
     $cssFile = basename($cssFile);
     $jsFile = basename($jsFile);
 
-    $cssPath = public_path($packageAssetsPath . '/' . $cssFile);
-    $jsPath = public_path($packageAssetsPath . '/' . $jsFile);
+    // Compute cache-busting version from the actual generated package dist files,
+    // rather than the public published folder, because the controller serves from here!
+    $cssPath = __DIR__ . '/../../dist/build/assets/' . $cssFile;
+    $jsPath = __DIR__ . '/../../dist/build/assets/' . $jsFile;
+
     $cssV = file_exists($cssPath) ? filemtime($cssPath) : time();
     $jsV = file_exists($jsPath) ? filemtime($jsPath) : time();
     @endphp

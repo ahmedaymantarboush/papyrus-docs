@@ -174,6 +174,7 @@ class OpenApiGenerator
     {
         $type = is_array($node) ? ($node['type'] ?? 'text') : (is_object($node) ? ($node->type ?? 'text') : 'text');
         $desc = is_array($node) ? ($node['description'] ?? '') : (is_object($node) ? ($node->description ?? '') : '');
+        $isList = is_array($node) ? ($node['isList'] ?? false) : (is_object($node) ? ($node->isList ?? false) : false);
 
         $prop = match ($type) {
             'number', 'integer' => ['type' => 'number'],
@@ -187,7 +188,7 @@ class OpenApiGenerator
             'color'             => ['type' => 'string', 'format' => 'color'],
             'json'              => ['type' => 'object'],
             'array'             => ['type' => 'array', 'items' => ['type' => 'string']],
-            'object'            => ['type' => 'object'],
+            'object'            => $isList ? ['type' => 'array', 'items' => ['type' => 'object']] : ['type' => 'object'],
             'select'            => ['type' => 'string'],
             default             => ['type' => 'string'],
         };
@@ -220,7 +221,13 @@ class OpenApiGenerator
                 $childKey = is_array($child) ? ($child['key'] ?? '') : ($child->key ?? '');
                 if ($childKey) $nested[$childKey] = $this->nodeToSchema($child);
             }
-            if ($nested) $prop['properties'] = $nested;
+            if ($nested) {
+                if ($isList) {
+                    $prop['items']['properties'] = $nested;
+                } else {
+                    $prop['properties'] = $nested;
+                }
+            }
         }
 
         return $prop;

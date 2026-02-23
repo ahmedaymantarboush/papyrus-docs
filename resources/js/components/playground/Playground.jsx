@@ -15,7 +15,7 @@ import { rid, pathParams, SNIPPET_LANGS, PC } from '../../constants';
  * Config consumption: defaultResponses from PapyrusConfig.
  * 
  */
-export default function Playground({ route, formValues, pathVals, open, onClose, customHeaders, setCustomHeaders, settings, setSettings, width, setWidth, onExecuteRef, executing, setExecuting }) {
+export default function Playground({ route, formValues, queryValues, pathVals, open, onClose, customHeaders, setCustomHeaders, settings, setSettings, width, setWidth, onExecuteRef, executing, setExecuting }) {
     const [tab, setTab] = useState('snippet');
     const [lang, setLang] = useState('curl');
     const [response, setResponse] = useState(null);
@@ -111,7 +111,7 @@ export default function Playground({ route, formValues, pathVals, open, onClose,
         setTab('response');
 
         try {
-            const { url, method: reqMethod, hdrs, body } = prepareRequest(route, formValues, pathVals, headerObj);
+            const { url, method: reqMethod, hdrs, body } = prepareRequest(route, formValues, pathVals, headerObj, queryValues);
             const finalHdrs = { ...hdrs };
             Object.keys(headerObj).forEach(k => finalHdrs[k] = headerObj[k]);
 
@@ -140,7 +140,7 @@ export default function Playground({ route, formValues, pathVals, open, onClose,
         } finally {
             setExecuting(false);
         }
-    }, [route, formValues, pathVals, headerObj, settings.saveResponses]);
+    }, [route, formValues, queryValues, pathVals, headerObj, settings.saveResponses]);
 
     useEffect(() => {
         if (onExecuteRef) {
@@ -191,7 +191,7 @@ export default function Playground({ route, formValues, pathVals, open, onClose,
                                     <div className="bg-slate-50 dark:bg-[#1E293B] rounded-lg border border-slate-200 dark:border-slate-700/40 p-4 overflow-x-auto shadow-inner relative group/snippet">
                                         <button 
                                             onClick={(e) => {
-                                                navigator.clipboard.writeText(generateSnippet(lang, route, formValues, pathVals, headerObj));
+                                                navigator.clipboard.writeText(generateSnippet(lang, route, formValues, pathVals, headerObj, queryValues));
                                                 const btn = e.currentTarget;
                                                 const originalHTML = btn.innerHTML;
                                                 btn.innerHTML = `<svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>`;
@@ -202,7 +202,7 @@ export default function Playground({ route, formValues, pathVals, open, onClose,
                                         >
                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
                                         </button>
-                                        <pre className="text-[12px] font-mono text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap break-all">{generateSnippet(lang, route, formValues, pathVals, headerObj)}</pre>
+                                        <pre className="text-[12px] font-mono text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap break-all">{generateSnippet(lang, route, formValues, pathVals, headerObj, queryValues)}</pre>
                                     </div>
                                 </div>
                             )}

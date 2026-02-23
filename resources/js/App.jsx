@@ -46,6 +46,7 @@ export default function App() {
     const [activeRoute, setActiveRoute] = useState(null);
 
     const [formTree, setFormTree] = useState([]);
+    const [queryTree, setQueryTree] = useState([]);
     const [pathVals, setPathVals] = useState({});
 
     /* ── Custom Headers (initialized from PapyrusConfig) ─────────── */
@@ -231,6 +232,15 @@ export default function App() {
             setFormTree([]);
         }
 
+        // Hydrate Query Params
+        if (loadedState?.queryTree) {
+            setQueryTree(buildInitialTree(activeRoute.queryParams || [], loadedState.queryTree));
+        } else if (activeRoute.queryParams && typeof activeRoute.queryParams === 'object' && activeRoute.queryParams.length > 0) {
+            setQueryTree(buildInitialTree(activeRoute.queryParams, []));
+        } else {
+            setQueryTree([]);
+        }
+
         const initialPaths = {};
         pathParams(activeRoute.uri).forEach(({ name }) => {
             initialPaths[name] = (loadedState?.paths && loadedState.paths[name] !== undefined) ? loadedState.paths[name] : '';
@@ -269,6 +279,14 @@ export default function App() {
             setFormTree([]);
         }
 
+        // 1b. Reset Query Params
+        if (activeRoute.queryParams && typeof activeRoute.queryParams === 'object' && activeRoute.queryParams.length > 0) {
+            const freshQuery = structuredClone(activeRoute.queryParams);
+            setQueryTree(resetTreeToDefaults(freshQuery));
+        } else {
+            setQueryTree([]);
+        }
+
         // 2. Reset Path Params
         const initialPaths = {};
         pathParams(activeRoute.uri).forEach(({ name }) => {
@@ -284,17 +302,18 @@ export default function App() {
     useEffect(() => {
         if (!activeRoute) return;
         const routeKey = rid(activeRoute);
-        const stateToSave = { tree: sanitizeTree(formTree), paths: pathVals };
+        const stateToSave = { tree: sanitizeTree(formTree), queryTree: sanitizeTree(queryTree), paths: pathVals };
         if (!settings.globalHeaders) {
             stateToSave.headers = customHeaders;
         } else {
             window.localStorage.setItem('papyrus_global_headers', JSON.stringify(customHeaders));
         }
         window.localStorage.setItem(`papyrus_state_${routeKey}`, JSON.stringify(stateToSave));
-    }, [formTree, pathVals, customHeaders, activeRoute, settings.globalHeaders]);
+    }, [formTree, queryTree, pathVals, customHeaders, activeRoute, settings.globalHeaders]);
 
     const onPathChange = useCallback((k, v) => setPathVals(p => ({ ...p, [k]: v })), []);
     const preparedForm = useMemo(() => compileTreeToPayload(formTree), [formTree]);
+    const preparedQuery = useMemo(() => compileTreeToPayload(queryTree), [queryTree]);
 
     /* ══════════════════════════════════════════════════════════════
        RENDER
@@ -365,9 +384,9 @@ export default function App() {
                 <Sidebar schema={schema} activeId={activeId} onSelect={handleRouteSelect} open={menuOpen} onClose={() => setMenuOpen(false)} width={sidebarWidth} setWidth={setSidebarWidth} />
                 <main className="flex-1 overflow-y-auto scroll-smooth custom-scrollbar relative bg-white dark:bg-[#0B1120]">
                     <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-amber-500/40 to-transparent z-10" />
-                    <DocSection route={activeRoute} formTree={formTree} setFormTree={setFormTree} pathVals={pathVals} onPathChange={onPathChange} schema={schema} onSelect={handleRouteSelect} onExecuteRequest={() => { setPlaygroundOpen(true); if (executeRef.current) executeRef.current(); }} executing={executing} onReset={resetFormState} />
+                    <DocSection route={activeRoute} formTree={formTree} setFormTree={setFormTree} queryTree={queryTree} setQueryTree={setQueryTree} pathVals={pathVals} onPathChange={onPathChange} schema={schema} onSelect={handleRouteSelect} onExecuteRequest={() => { setPlaygroundOpen(true); if (executeRef.current) executeRef.current(); }} executing={executing} onReset={resetFormState} />
                 </main>
-                <Playground route={activeRoute} formValues={preparedForm} pathVals={pathVals} open={playgroundOpen} onClose={() => setPlaygroundOpen(false)} customHeaders={customHeaders} setCustomHeaders={setCustomHeaders} settings={settings} setSettings={setSettings} width={playgroundWidth} setWidth={setPlaygroundWidth} onExecuteRef={executeRef} executing={executing} setExecuting={setExecuting} />
+                <Playground route={activeRoute} formValues={preparedForm} queryValues={preparedQuery} pathVals={pathVals} open={playgroundOpen} onClose={() => setPlaygroundOpen(false)} customHeaders={customHeaders} setCustomHeaders={setCustomHeaders} settings={settings} setSettings={setSettings} width={playgroundWidth} setWidth={setPlaygroundWidth} onExecuteRef={executeRef} executing={executing} setExecuting={setExecuting} />
             </div>
 
             <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} settings={settings} setSettings={setSettings} />
