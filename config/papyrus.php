@@ -140,29 +140,8 @@ return [
 
     'rules_methods' => ['rules'],
 
-    /*
-    |--------------------------------------------------------------------------
-    | Default Responses
-    |--------------------------------------------------------------------------
-    |
-    | The list of HTTP status codes displayed by default in the
-    | Playground response section. These appear as reference badges
-    | so developers know the expected response codes for each endpoint.
-    |
-    */
 
-    'default_responses' => [
-        '200',
-        '400',
-        '401',
-        '403',
-        '404',
-        '405',
-        '422',
-        '429',
-        '500',
-        '503',
-    ],
+
 
     /*
     |--------------------------------------------------------------------------

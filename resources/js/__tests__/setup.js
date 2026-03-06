@@ -7,7 +7,6 @@
 window.PapyrusConfig = {
     base_url: 'http://localhost',
     headers: { 'Accept': 'application/json' },
-    defaultResponses: ['200', '422'],
 };
 
 // Mock localStorage

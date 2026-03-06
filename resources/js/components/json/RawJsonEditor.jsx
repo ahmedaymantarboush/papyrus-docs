@@ -3,6 +3,7 @@ import { JsonEditor, githubDarkTheme } from 'json-edit-react';
 import { compileTreeToPayload, treeHasFiles } from '../../helpers/request';
 import { hydrateFormTreeFromJson } from '../../helpers/schema';
 import { btnSm } from '../../constants';
+import { copyToClipboard } from '../../helpers/clipboard';
 
 /**
  * RawJsonEditor — Read-Only JSON preview and Two-Way Sync Editor
@@ -78,7 +79,7 @@ export default function RawJsonEditor({ formTree, setFormTree, activeTab, setAct
                     <div className="flex items-center gap-2">
                         <button
                             onClick={(e) => {
-                                navigator.clipboard.writeText(JSON.stringify(localJson !== null ? localJson : derivedJson, null, 2));
+                                copyToClipboard(JSON.stringify(localJson !== null ? localJson : derivedJson, null, 2));
                                 const btn = e.currentTarget;
                                 const originalHTML = btn.innerHTML;
                                 btn.innerHTML = `<svg class="w-4 h-4 text-emerald-500 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg> Copied`;

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { JsonEditor, githubDarkTheme } from 'json-edit-react';
 import DynamicField from '../form/DynamicField';
 import { inputCls, btnSm } from '../../constants';
+import { copyToClipboard } from '../../helpers/clipboard';
 
 /**
  * HeadersEditor — Custom request headers editor.
@@ -88,7 +89,7 @@ export default function HeadersEditor({ headers, setHeaders, rawMode, setRawMode
                     {rawMode && (
                         <button
                             onClick={(e) => {
-                                navigator.clipboard.writeText(JSON.stringify(rawJson, null, 2));
+                                copyToClipboard(JSON.stringify(rawJson, null, 2));
                                 const btn = e.currentTarget;
                                 const originalHTML = btn.innerHTML;
                                 btn.innerHTML = `<svg class="w-3.5 h-3.5 text-emerald-500 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg> Copied`;

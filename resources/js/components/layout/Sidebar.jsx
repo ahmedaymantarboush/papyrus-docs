@@ -64,14 +64,19 @@ export default function Sidebar({ schema, activeId, onSelect, open, onClose, wid
 
     return (
         <>
-            {/* Backdrop: always in DOM on mobile, animated via opacity */}
+            {/* Backdrop: bounded below navbar on mobile, animated via opacity */}
             <div
-                className={`fixed inset-0 bg-black/60 z-[60] lg:hidden backdrop-blur-sm transition-opacity duration-300 ${open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+                style={{ zIndex: 998 }}
+                className={`fixed top-14 bottom-0 inset-x-0 bg-black/60 lg:hidden backdrop-blur-sm transition-opacity duration-300 ${open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
                 onClick={onClose}
             />
             {/* Sidebar positioning: Below navbar (top-14), height calc to bottom. */}
-            <aside data-panel="sidebar" ref={sidebarRef} style={{ width: width + 'px', marginLeft: open ? '0px' : `-${width}px` }} className={`fixed top-14 left-0 h-[calc(100vh-3.5rem)] z-[60] shrink-0 bg-slate-50 dark:bg-[#0B1120] border-r border-slate-200 dark:border-slate-800/60 flex flex-col transition-all duration-300 ease-in-out lg:static ${open ? 'shadow-2xl shadow-black/40' : ''}`}>
-                <div onMouseDown={startResizing} className="absolute top-0 right-0 bottom-0 w-2 cursor-col-resize hover:bg-amber-500/20 active:bg-amber-500/40 z-50 transition-colors" />
+            <aside 
+                data-panel="navigation"
+                ref={sidebarRef} 
+                style={{ width: width + 'px', marginLeft: open ? '0px' : `-${width}px`, zIndex: 999 }} 
+                className={`max-w-[100vw] fixed top-14 lg:top-0 left-0 h-[calc(100vh-3.5rem)] flex flex-col bg-white dark:bg-[#0B1120] border-r border-slate-200 dark:border-slate-800/60 shadow-2xl lg:shadow-none transition-all duration-300 ease-in-out lg:relative ${open ? 'translate-x-0' : '-translate-x-full lg:translate-x-0 lg:!ml-[-100%] lg:hidden'} shrink-0 group`}
+            >    <div onMouseDown={startResizing} className="absolute top-0 right-0 bottom-0 w-2 cursor-col-resize hover:bg-amber-500/20 active:bg-amber-500/40 z-50 transition-colors" />
                 
                 <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800/40 shrink-0">
                     <input type="text" placeholder="Search endpoints..." className={inputCls} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />

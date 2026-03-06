@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import HeadersEditor from '../headers/HeadersEditor';
 import { generateSnippet } from '../../helpers/snippets';
 import { prepareRequest } from '../../helpers/request';
+import { copyToClipboard } from '../../helpers/clipboard';
 import { JsonEditor, githubLightTheme, githubDarkTheme } from 'json-edit-react';
 import { rid, pathParams, SNIPPET_LANGS, PC, inputCls } from '../../constants';
 import DynamicField from '../form/DynamicField';
@@ -17,7 +18,7 @@ import RawJsonEditor from '../json/RawJsonEditor';
  * Config consumption: defaultResponses from PapyrusConfig.
  * 
  */
-export default function Playground({ route, formValues, queryValues, pathVals, open, onClose, customHeaders, setCustomHeaders, settings, setSettings, width, setWidth, onExecuteRef, executing, setExecuting, formTree, setFormTree, queryTree, setQueryTree, onPathChange }) {
+export default function Playground({ route, formValues, queryValues, pathVals, open, onClose, customHeaders, setCustomHeaders, settings, setSettings, width, setWidth, onExecuteRef, executing, setExecuting, formTree, setFormTree, queryTree, setQueryTree, onPathChange, onResetPayload, onResetQuery, onResetPath }) {
     const [tab, setTab] = useState('snippet');
     const [formTab, setFormTab] = useState('form');
     const [queryTab, setQueryTab] = useState('form');
@@ -159,12 +160,14 @@ export default function Playground({ route, formValues, queryValues, pathVals, o
         { id: 'response', label: 'Response', dot: response ? (response.status >= 200 && response.status < 300 ? 'bg-emerald-400' : 'bg-rose-400') : null },
     ];
 
-    const defaultResponses = PC().defaultResponses || [];
+
+    // Get expected status codes from route's predicted/documented responses
+    const expectedCodes = route?.responses ? Object.keys(route.responses).sort((a, b) => parseInt(a) - parseInt(b)) : [];
 
     return (
         <>
             {open && <div className="fixed inset-0 bg-black/60 z-40 lg:hidden backdrop-blur-sm" onClick={onClose} />}
-            <aside data-panel="playground" ref={pgRef} style={{ width: width + 'px', marginRight: open ? '0px' : `-${width}px` }} className={`fixed top-14 right-0 h-[calc(100vh-3.5rem)] shrink-0 max-w-full z-40 bg-slate-50 dark:bg-[#0F172A] border-l border-slate-200 dark:border-slate-800/60 flex flex-col transition-all duration-300 ease-in-out lg:static ${open ? 'shadow-2xl shadow-black/30' : ''}`}>
+            <aside data-panel="playground" ref={pgRef} style={{ width: width + 'px', marginRight: open ? '0px' : `-${width}px` }} className={`max-w-[100vw] fixed top-14 lg:top-0 right-0 h-[calc(100vh-3.5rem)] z-[50] flex flex-col bg-white dark:bg-[#0B1120] border-l border-slate-200 dark:border-slate-800/60 shadow-2xl transition-all duration-300 ease-in-out lg:relative ${open ? 'translate-x-0' : 'translate-x-full lg:translate-x-0 lg:!mr-[-100%] lg:hidden'} shrink-0`}>
                 <div onMouseDown={startResizing} className="absolute top-0 left-0 bottom-0 w-2 cursor-col-resize hover:bg-amber-500/20 active:bg-amber-500/40 z-50 transition-colors -ml-1" />
 
                 <div className="shrink-0 border-b border-slate-200 dark:border-slate-800/40 flex items-center gap-2 px-3 py-3 object-top">
@@ -190,7 +193,13 @@ export default function Playground({ route, formValues, queryValues, pathVals, o
                                 <div className="space-y-6">
                                     {pathParams(route.uri).length > 0 && (
                                         <div>
-                                            <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3 border-b border-slate-200 dark:border-slate-800/60 pb-1">Path Parameters</h3>
+                                            <div className="flex items-center justify-between mb-3 border-b border-slate-200 dark:border-slate-800/60 pb-1">
+                                                <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-0">Path Parameters</h3>
+                                                <button onClick={onResetPath} className="text-[10px] uppercase font-bold text-slate-400 hover:text-amber-500 transition-colors flex items-center gap-1" title="Clear path parameters">
+                                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                                                    Reset
+                                                </button>
+                                            </div>
                                             <div className="space-y-3">
                                                 {pathParams(route.uri).map(({ name, optional }) => (
                                                     <div key={name} className="flex flex-col gap-1.5">
@@ -204,7 +213,15 @@ export default function Playground({ route, formValues, queryValues, pathVals, o
 
                                     {queryTree && (
                                         <div>
-                                            {queryTree.length > 0 && <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3 border-b border-slate-200 dark:border-slate-800/60 pb-1">Query Parameters</h3>}
+                                            {queryTree.length > 0 && (
+                                                <div className="flex items-center justify-between mb-3 border-b border-slate-200 dark:border-slate-800/60 pb-1">
+                                                    <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-0">Query Parameters</h3>
+                                                    <button onClick={() => { if (onResetQuery) onResetQuery(); setQueryTab('form'); }} className="text-[10px] uppercase font-bold text-slate-400 hover:text-amber-500 transition-colors flex items-center gap-1" title="Reset query to defaults">
+                                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                                                        Reset
+                                                    </button>
+                                                </div>
+                                            )}
                                             <div className="space-y-2 mt-2">
                                                 {queryTree.length > 0 && <RawJsonEditor formTree={queryTree} setFormTree={setQueryTree} activeTab={queryTab} setActiveTab={setQueryTab} hideHeader={true} />}
                                                 {queryTab === 'form' && queryTree.map((node, i) => (
@@ -219,7 +236,15 @@ export default function Playground({ route, formValues, queryValues, pathVals, o
 
                                     {formTree && (
                                         <div>
-                                            {formTree.length > 0 && <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3 border-b border-slate-200 dark:border-slate-800/60 pb-1">Request Payload</h3>}
+                                            {formTree.length > 0 && (
+                                                <div className="flex items-center justify-between mb-3 border-b border-slate-200 dark:border-slate-800/60 pb-1">
+                                                    <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-0">Request Payload</h3>
+                                                    <button onClick={() => { if (onResetPayload) onResetPayload(); setFormTab('form'); }} className="text-[10px] uppercase font-bold text-slate-400 hover:text-amber-500 transition-colors flex items-center gap-1" title="Reset payload to schema defaults">
+                                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                                                        Reset
+                                                    </button>
+                                                </div>
+                                            )}
                                             <div className="space-y-2 mt-2">
                                                 {formTree.length > 0 && <RawJsonEditor formTree={formTree} setFormTree={setFormTree} activeTab={formTab} setActiveTab={setFormTab} hideHeader={true} />}
                                                 {formTab === 'form' && formTree.map((node, i) => (
@@ -244,7 +269,7 @@ export default function Playground({ route, formValues, queryValues, pathVals, o
                                     <div className="bg-slate-50 dark:bg-[#1E293B] rounded-lg border border-slate-200 dark:border-slate-700/40 p-4 overflow-x-auto shadow-inner relative group/snippet">
                                         <button 
                                             onClick={(e) => {
-                                                navigator.clipboard.writeText(generateSnippet(lang, route, formValues, pathVals, headerObj, queryValues));
+                                                copyToClipboard(generateSnippet(lang, route, formValues, pathVals, headerObj, queryValues));
                                                 const btn = e.currentTarget;
                                                 const originalHTML = btn.innerHTML;
                                                 btn.innerHTML = `<svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>`;
@@ -264,11 +289,11 @@ export default function Playground({ route, formValues, queryValues, pathVals, o
 
                             {tab === 'response' && (
                                 <div className="space-y-4">
-                                    {/* Default Response Badges (from config) */}
-                                    {defaultResponses.length > 0 && !response && (
+                                    {/* Expected Response Badges (from route predictions) */}
+                                    {expectedCodes.length > 0 && !response && (
                                         <div className="flex flex-wrap gap-1.5 mb-4">
                                             <span className="text-[10px] font-mono text-slate-500 dark:text-slate-600 mr-1">Expected:</span>
-                                            {defaultResponses.map(code => (
+                                            {expectedCodes.map(code => (
                                                 <span key={code} className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono border ${parseInt(code) >= 200 && parseInt(code) < 300 ? 'text-emerald-600 dark:text-emerald-400 border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/5' : parseInt(code) >= 400 ? 'text-rose-600 dark:text-rose-400 border-rose-500/20 bg-rose-50 dark:bg-rose-500/5' : 'text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-600/20 bg-slate-100 dark:bg-slate-700/20'}`}>
                                                     {code}
                                                 </span>
@@ -303,7 +328,7 @@ export default function Playground({ route, formValues, queryValues, pathVals, o
                                                     {showRH && (
                                                         <div className="px-3 py-2 max-h-40 overflow-y-auto border-t border-slate-200 dark:border-slate-800/40 bg-slate-50 dark:bg-[#1E293B]/50">
                                                             {Object.entries(response.headers).map(([k, v]) => (
-                                                                <div key={k} className="flex gap-2 py-0.5 text-[11px] font-mono"><span className="text-amber-600 dark:text-amber-400/70 shrink-0">{k}:</span><span className="text-slate-600 dark:text-slate-400 break-all">{v}</span></div>
+                                                                <div key={k} className="flex gap-2 py-0.5 text-[11px] font-mono"><span className="text-amber-600 dark:text-amber-400/70 shrink-0">{k}:</span><span className="text-slate-600 dark:text-slate-400 break-all">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span></div>
                                                             ))}
                                                         </div>
                                                     )}

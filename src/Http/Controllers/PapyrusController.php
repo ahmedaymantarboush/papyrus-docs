@@ -19,7 +19,6 @@ class PapyrusController extends Controller
             'baseUrl' => config('papyrus.base_url', request()->getSchemeAndHttpHost()),
             'path' => config('papyrus.url', config('papyrus.path', 'papyrus-docs')),
             'headers' => config('papyrus.default_headers', []),
-            'defaultResponses' => config('papyrus.default_responses', []),
             'groupByPatterns' => config('papyrus.group_by.uri_patterns', []),
             'debug' => config('papyrus.debug', false),
             'faviconUrl' => route('papyrus.favicon', ['file' => 'android-chrome-192x192.png']),

@@ -143,13 +143,13 @@ class PapyrusGenerator
         $responseParamsRaw = $this->extractDocBlockResponseParams($reflection);
 
         $responses = [];
-        // Extract legacy response (fallback)
-        $legacyResponse = $this->extractResponse($reflection);
-        if ($legacyResponse) {
-            $responses['200'] = [
-                'responseExample' => $legacyResponse,
-                'schema' => [],
-            ];
+        // Extract legacy response (fallback via JsonResource return type)
+        $resourceClass = $this->resolveResourceClass($reflection);
+        if ($resourceClass) {
+            $predicted = $this->predictFromResource($resourceClass);
+            if ($predicted) {
+                $responses['200'] = $predicted;
+            }
         }
 
         // Merge response schemas
@@ -175,6 +175,75 @@ class PapyrusGenerator
             }
         }
 
+        // ── AUTO-PREDICTION: code-driven ────────────────────────────────
+        // Detect response content type
+        $responseType = $this->detectResponseContentType($reflection, $route);
+
+        // Predict 200 success response if not already documented
+        if (! isset($responses['200']) && ! isset($responses['201']) && ! isset($responses['204'])) {
+            if ($responseType === 'void') {
+                $responses['204'] = [
+                    'responseExample' => null,
+                    'schema'          => [],
+                    'contentType'     => 'no-content',
+                    'description'     => 'This endpoint does not return a response body.',
+                ];
+            } elseif ($responseType === 'html') {
+                $responses['200'] = [
+                    'responseExample' => null,
+                    'schema'          => [],
+                    'contentType'     => 'text/html',
+                    'description'     => 'Returns an HTML view.',
+                ];
+            } elseif ($responseType === 'redirect') {
+                $responses['302'] = [
+                    'responseExample' => null,
+                    'schema'          => [],
+                    'contentType'     => 'redirect',
+                    'description'     => 'Redirects to another URL.',
+                ];
+            } elseif ($responseType === 'file') {
+                $responses['200'] = [
+                    'responseExample' => null,
+                    'schema'          => [],
+                    'contentType'     => 'application/octet-stream',
+                    'description'     => 'Returns a file download.',
+                ];
+            } else {
+                // JSON response — use existing prediction engine
+                $predicted = $this->predictResponse($reflection, $bodyParams);
+                $methods = array_map('strtoupper', $route->methods());
+                $successCode = in_array('POST', $methods) ? '201' : '200';
+
+                if ($predicted) {
+                    $responses[$successCode] = $predicted;
+                } else {
+                    // Fallback: always show success status code
+                    $responses[$successCode] = [
+                        'responseExample' => ['message' => 'Success'],
+                        'schema'          => $this->buildSchemaFromJson(['message' => 'Success']),
+                    ];
+                }
+            }
+        }
+
+        // Predict error responses from actual code analysis
+        $potentialErrors = $this->detectPotentialStatusCodes($route, $reflection, $bodyParams);
+
+        foreach ($potentialErrors as $statusCode) {
+            if (isset($responses[$statusCode])) {
+                continue;
+            }
+
+            $errorExample = $this->buildErrorExample($statusCode, $bodyParams);
+            if ($errorExample) {
+                $responses[$statusCode] = [
+                    'responseExample' => $errorExample,
+                    'schema'          => $this->buildSchemaFromJson($errorExample),
+                ];
+            }
+        }
+
         return (object) [
             'uri'                 => $route->uri(),
             'methods'             => $route->methods(),
@@ -189,6 +258,413 @@ class PapyrusGenerator
             'headers'             => $headers,
             'responses'           => $responses,
         ];
+    }
+
+    /**
+     * Detect which HTTP error status codes a specific route can actually produce.
+     *
+     * Inspects:
+     *   - Middleware: auth → 401, can:/authorize → 403, throttle → 429
+     *   - FormRequest type-hints → 422 (validation)
+     *   - Route model binding (implicit/explicit) → 404
+     *   - Source code patterns: findOrFail/firstOrFail → 404, authorize() → 403, abort() → various
+     *   - HTTP method heuristics: API mutating routes usually need auth
+     *
+     * @param  \Illuminate\Routing\Route  $route
+     * @param  \ReflectionMethod  $reflection
+     * @param  array  $bodyParams
+     * @return array<string>
+     */
+    protected function detectPotentialStatusCodes($route, \ReflectionMethod $reflection, array $bodyParams = []): array
+    {
+        $codes = [];
+        $middlewares = $route->gatherMiddleware();
+        $middlewareStr = implode(',', array_map(fn($m) => is_string($m) ? $m : '', $middlewares));
+
+        // ── Known exception → status code map ────────────────────────
+        $exceptionMap = [
+            'AuthenticationException'        => '401',
+            'AuthorizationException'         => '403',
+            'AccessDeniedHttpException'      => '403',
+            'UnauthorizedException'          => '403',
+            'ModelNotFoundException'          => '404',
+            'NotFoundHttpException'          => '404',
+            'MethodNotAllowedHttpException'  => '405',
+            'ValidationException'            => '422',
+            'ThrottleRequestsException'      => '429',
+            'TooManyRequestsHttpException'   => '429',
+            'HttpException'                  => '500',
+            'HttpResponseException'          => '500',
+            'TokenMismatchException'         => '419',
+            'MaintenanceModeException'       => '503',
+            'ServiceUnavailableHttpException' => '503',
+            'ConflictHttpException'          => '409',
+            'GoneHttpException'              => '410',
+            'BadRequestHttpException'        => '400',
+            'UnprocessableEntityHttpException' => '422',
+            'TranslatableException'          => '500',
+        ];
+
+        // ── Middleware-based detection ───────────────────────────────
+        if (preg_match('/\bauth\b/', $middlewareStr)) {
+            $codes[] = '401';
+        }
+        if (preg_match('/\b(can:|permission|role)\b/', $middlewareStr)) {
+            $codes[] = '403';
+        }
+        if (preg_match('/\bthrottle\b/', $middlewareStr)) {
+            $codes[] = '429';
+        }
+        if (preg_match('/\bverified\b/', $middlewareStr)) {
+            $codes[] = '403';
+        }
+
+        // ── FormRequest → 422 + 403 ──────────────────────────────────
+        if (! empty($bodyParams)) {
+            $codes[] = '422';
+        }
+        foreach ($reflection->getParameters() as $param) {
+            $paramType = $param->getType();
+            if ($paramType instanceof \ReflectionNamedType && ! $paramType->isBuiltin()) {
+                $className = $paramType->getName();
+                if (class_exists($className) && is_subclass_of($className, \Illuminate\Foundation\Http\FormRequest::class)) {
+                    $codes[] = '422';
+                    $codes[] = '403';
+                    break;
+                }
+            }
+        }
+
+        // ── Route model binding → 404 ────────────────────────────────
+        if (preg_match('/\{[a-zA-Z_]+\}/', $route->uri())) {
+            $codes[] = '404';
+        }
+
+        // ── @throws docblock analysis ────────────────────────────────
+        $comment = $reflection->getDocComment();
+        if ($comment && preg_match_all('/@throws\s+\\\\?([\w\\\\]+)/', $comment, $throwMatches)) {
+            foreach ($throwMatches[1] as $exceptionClass) {
+                $basename = class_basename($exceptionClass);
+                if (isset($exceptionMap[$basename])) {
+                    $codes[] = $exceptionMap[$basename];
+                }
+                // Try to resolve the full class to check for HttpException with status code
+                $this->resolveExceptionCode($exceptionClass, $codes, $exceptionMap, $reflection);
+            }
+        }
+
+        // ── Source code analysis ─────────────────────────────────────
+        try {
+            $filename = $reflection->getFileName();
+            $startLine = $reflection->getStartLine();
+            $endLine = $reflection->getEndLine();
+
+            if ($filename && file_exists($filename)) {
+                $lines = array_slice(file($filename), $startLine - 1, $endLine - $startLine + 1);
+                $source = implode('', $lines);
+
+                // findOrFail / firstOrFail / sole → 404
+                if (preg_match('/\b(findOrFail|firstOrFail|sole|->findOrFail|->firstOrFail)\b/', $source)) {
+                    $codes[] = '404';
+                }
+
+                // authorize → 403
+                if (preg_match('/\b(->authorize\(|Gate::authorize|Gate::denies|Gate::allows|Gate::check)\b/', $source)) {
+                    $codes[] = '403';
+                }
+
+                // abort(N)
+                if (preg_match_all('/\babort\(\s*(\d{3})\s*[\),]/', $source, $abortMatches)) {
+                    foreach ($abortMatches[1] as $code) {
+                        $codes[] = $code;
+                    }
+                }
+
+                // abort_if / abort_unless
+                if (preg_match_all('/\b(abort_if|abort_unless)\(.+?,\s*(\d{3})\s*[\),]/s', $source, $abortMatches)) {
+                    foreach ($abortMatches[2] as $code) {
+                        $codes[] = $code;
+                    }
+                }
+
+                // throw new ExceptionClass → map to status code
+                if (preg_match_all('/throw\s+new\s+\\\\?([\w\\\\]+)/', $source, $throwMatches)) {
+                    foreach ($throwMatches[1] as $exceptionClass) {
+                        $basename = class_basename($exceptionClass);
+                        if (isset($exceptionMap[$basename])) {
+                            $codes[] = $exceptionMap[$basename];
+                        }
+                        $this->resolveExceptionCode($exceptionClass, $codes, $exceptionMap, $reflection);
+                    }
+                }
+
+                // response()->json(... , 4xx/5xx) — explicit status returns
+                if (preg_match_all('/->json\(.+?,\s*(4\d{2}|5\d{2})\s*\)/s', $source, $jsonStatusMatches)) {
+                    foreach ($jsonStatusMatches[1] as $code) {
+                        $codes[] = $code;
+                    }
+                }
+
+                // return response(... , 4xx/5xx)
+                if (preg_match_all('/\bresponse\(.+?,\s*(4\d{2}|5\d{2})\s*\)/s', $source, $respMatches)) {
+                    foreach ($respMatches[1] as $code) {
+                        $codes[] = $code;
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            // Silently skip
+        }
+
+        // ── HTTP method heuristics ───────────────────────────────────
+        $methods = array_map('strtoupper', $route->methods());
+        if (array_intersect($methods, ['POST', 'PUT', 'PATCH', 'DELETE'])) {
+            if (str_starts_with($route->uri(), 'api')) {
+                $codes[] = '401';
+            }
+        }
+
+        // 500 is always possible
+        $codes[] = '500';
+
+        return array_values(array_unique($codes));
+    }
+
+    /**
+     * Attempt to resolve a thrown exception class to its HTTP status code.
+     */
+    protected function resolveExceptionCode(string $exceptionClass, array &$codes, array $exceptionMap, \ReflectionMethod $reflection): void
+    {
+        // Try full class name
+        $fqcn = ltrim($exceptionClass, '\\');
+        if (! class_exists($fqcn)) {
+            // Try relative to controller namespace
+            $ns = $reflection->getDeclaringClass()->getNamespaceName();
+            $fqcn = $ns . '\\' . $exceptionClass;
+        }
+
+        if (class_exists($fqcn)) {
+            // If it extends HttpException, it has a getStatusCode() method
+            if (is_subclass_of($fqcn, \Symfony\Component\HttpKernel\Exception\HttpException::class)) {
+                try {
+                    $ref = new \ReflectionClass($fqcn);
+                    $constructor = $ref->getConstructor();
+                    // Try to instantiate with default message to get status code
+                    if ($constructor && $constructor->getNumberOfRequiredParameters() === 0) {
+                        $instance = new $fqcn();
+                        $codes[] = (string) $instance->getStatusCode();
+                    }
+                } catch (\Throwable $e) {
+                    // Skip
+                }
+            }
+        }
+    }
+
+    /**
+     * Detect the primary response content type of a controller method.
+     *
+     * @return string  'json' | 'html' | 'redirect' | 'file' | 'unknown'
+     */
+    protected function detectResponseContentType(\ReflectionMethod $reflection, $route): string
+    {
+        // ── 1. Check native return type hint ─────────────────────────
+        $returnType = $reflection->getReturnType();
+
+        // void → no response body
+        if ($returnType instanceof \ReflectionNamedType && $returnType->isBuiltin() && $returnType->getName() === 'void') {
+            return 'void';
+        }
+
+        // Handle union types (e.g., JsonResponse|RedirectResponse)
+        $typeNames = [];
+        if ($returnType instanceof \ReflectionUnionType) {
+            foreach ($returnType->getTypes() as $type) {
+                if ($type instanceof \ReflectionNamedType) {
+                    $typeNames[] = $type->getName();
+                }
+            }
+        } elseif ($returnType instanceof \ReflectionNamedType && ! $returnType->isBuiltin()) {
+            $typeNames[] = $returnType->getName();
+        }
+
+        foreach ($typeNames as $className) {
+            if (! class_exists($className) && ! interface_exists($className)) {
+                continue;
+            }
+
+            // JsonResponse or any subclass → json
+            if (
+                $className === \Illuminate\Http\JsonResponse::class
+                || is_subclass_of($className, \Illuminate\Http\JsonResponse::class)
+            ) {
+                return 'json';
+            }
+
+            // JsonResource / ResourceCollection → json
+            if (
+                is_subclass_of($className, \Illuminate\Http\Resources\Json\JsonResource::class)
+                || $className === \Illuminate\Http\Resources\Json\JsonResource::class
+                || $className === \Illuminate\Http\Resources\Json\AnonymousResourceCollection::class
+                || is_subclass_of($className, \Illuminate\Http\Resources\Json\ResourceCollection::class)
+            ) {
+                return 'json';
+            }
+
+            // Generic Response — could be JSON or HTML, we'll check source
+            if (
+                $className === \Illuminate\Http\Response::class
+                || is_subclass_of($className, \Illuminate\Http\Response::class)
+                || $className === \Symfony\Component\HttpFoundation\Response::class
+            ) {
+                // Don't return yet — let source analysis decide
+                continue;
+            }
+
+            // RedirectResponse → redirect
+            if (
+                $className === \Illuminate\Http\RedirectResponse::class
+                || is_subclass_of($className, \Illuminate\Http\RedirectResponse::class)
+            ) {
+                return 'redirect';
+            }
+
+            // BinaryFileResponse / StreamedResponse → file
+            if (
+                is_subclass_of($className, \Symfony\Component\HttpFoundation\BinaryFileResponse::class)
+                || is_subclass_of($className, \Symfony\Component\HttpFoundation\StreamedResponse::class)
+            ) {
+                return 'file';
+            }
+
+            // Responsable interface (custom classes implementing toResponse) → json likely
+            if (is_subclass_of($className, \Illuminate\Contracts\Support\Responsable::class)) {
+                return 'json';
+            }
+        }
+
+        // ── 2. Check @return docblock ────────────────────────────────
+        $comment = $reflection->getDocComment();
+        if ($comment && preg_match('/@return\s+([^\n]+)/', $comment, $returnMatch)) {
+            $returnDoc = $returnMatch[1];
+            $returnDocLower = strtolower($returnDoc);
+
+            if (str_contains($returnDocLower, 'void') || str_contains($returnDocLower, 'never')) {
+                return 'void';
+            }
+            if (preg_match('/(Resource|Collection|JsonResponse|JsonResource)/i', $returnDoc)) {
+                return 'json';
+            }
+            if (preg_match('/(RedirectResponse|Redirect)/i', $returnDoc)) {
+                return 'redirect';
+            }
+            if (preg_match('/(View|Renderable|Inertia)/i', $returnDoc)) {
+                return 'html';
+            }
+            if (preg_match('/(BinaryFileResponse|StreamedResponse|SplFileInfo)/i', $returnDoc)) {
+                return 'file';
+            }
+        }
+
+        // ── 3. Check middleware → likely content type ─────────────────
+        $middlewares = $route->gatherMiddleware();
+        $middlewareStr = implode(',', array_map(fn($m) => is_string($m) ? $m : '', $middlewares));
+        if (preg_match('/\bapi\b/', $middlewareStr) || str_starts_with($route->uri(), 'api')) {
+            return 'json';
+        }
+
+        // ── 4. Scan source code patterns ─────────────────────────────
+        try {
+            $filename = $reflection->getFileName();
+            $startLine = $reflection->getStartLine();
+            $endLine = $reflection->getEndLine();
+
+            if ($filename && file_exists($filename)) {
+                $lines = array_slice(file($filename), $startLine - 1, $endLine - $startLine + 1);
+                $source = implode('', $lines);
+
+                // return view(... / Inertia::render → html
+                if (preg_match('/\b(return\s+view\s*\(|Inertia::render\s*\(|->view\s*\()/', $source)) {
+                    return 'html';
+                }
+
+                // return redirect(... / to_route → redirect
+                if (preg_match('/\b(return\s+redirect\s*\(|->redirect\s*\(|to_route\s*\()/', $source)) {
+                    return 'redirect';
+                }
+
+                // response()->noContent() → void
+                if (preg_match('/->noContent\s*\(/', $source)) {
+                    return 'void';
+                }
+
+                // JSON patterns: Resource, Collection, response()->json(), ResponseHelper, etc.
+                if (preg_match('/(
+                    ->json\s*\(                           # response()->json()
+                    |new\s+\w+Resource\b                  # new UserResource(...)
+                    |new\s+\w+Collection\b                # new UserCollection(...)
+                    |\w+Resource::make\s*\(               # UserResource::make(...)
+                    |\w+Resource::collection\s*\(         # UserResource::collection(...)
+                    |\w+Collection::make\s*\(             # ResourceCollection::make(...)
+                    |ResourceCollection\b                  # AnonymousResourceCollection
+                    |ResponseHelper::                      # ResponseHelper::success(...)
+                    |ApiResponse::                         # ApiResponse::success(...)
+                    |JsonResponse\b                        # new JsonResponse(...)
+                    |->toResponse\s*\(                    # Responsable::toResponse()
+                    |response\(\)->json\s*\(              # response()->json()
+                    |return\s+response\s*\(\s*\[          # return response([...])
+                )/x', $source)) {
+                    return 'json';
+                }
+
+                // File download patterns
+                if (preg_match('/->(download|streamDownload|file)\s*\(/', $source)) {
+                    return 'file';
+                }
+            }
+        } catch (\Throwable $e) {
+            // Skip
+        }
+
+        // ── 5. Web middleware → HTML ──────────────────────────────────
+        if (preg_match('/\bweb\b/', $middlewareStr)) {
+            return 'html';
+        }
+
+        return 'json'; // Default assumption for API docs
+    }
+
+    /**
+     * Build a standard Laravel error example for a given HTTP status code.
+     *
+     * Produces the default Laravel exception handler JSON format.
+     */
+    protected function buildErrorExample(string $statusCode, array $bodyParams = []): ?array
+    {
+        $messages = [
+            '400' => 'Bad Request.',
+            '401' => 'Unauthenticated.',
+            '403' => 'This action is unauthorized.',
+            '404' => 'The requested resource was not found.',
+            '405' => 'The method is not allowed for the requested URL.',
+            '409' => 'Conflict.',
+            '410' => 'The requested resource is no longer available.',
+            '419' => 'Page Expired.',
+            '422' => 'The given data was invalid.',
+            '429' => 'Too Many Attempts.',
+            '500' => 'Server Error.',
+            '503' => 'Service Unavailable.',
+        ];
+
+        $message = $messages[$statusCode] ?? 'Error.';
+
+        // 422 gets dynamic validation errors from body params
+        if ($statusCode === '422' && ! empty($bodyParams)) {
+            $base = ['message' => $message, 'errors' => []];
+            return $this->build422FromBodyParams($base, $bodyParams);
+        }
+
+        return ['message' => $message];
     }
 
     /**
@@ -761,28 +1237,598 @@ class PapyrusGenerator
      * @param  \ReflectionMethod  $reflection
      * @return mixed|null
      */
-    protected function extractResponse(\ReflectionMethod $reflection)
+    /**
+     * Predict the response structure from the controller method.
+     *
+     * Strategy (in priority order):
+     *   1. Check return type for JsonResource subclass → read `toArray()` source to extract keys
+     *   2. Check `@return` docblock for JsonResource references
+     *   3. Build a synthetic example from the body parameters (echo-back pattern)
+     *
+     * @param  \ReflectionMethod  $reflection
+     * @param  array  $bodyParams  The already-parsed body parameter schema
+     * @return array{responseExample: mixed, schema: array}|null
+     */
+    protected function predictResponse(\ReflectionMethod $reflection, array $bodyParams = []): ?array
     {
-        $returnType = $reflection->getReturnType();
+        // ── Strategy 1: Return type is a JsonResource ────────────────
+        $resourceClass = $this->resolveResourceClass($reflection);
 
-        if (! $returnType instanceof \ReflectionNamedType || $returnType->isBuiltin()) {
-            return null;
+        if ($resourceClass) {
+            $predicted = $this->predictFromResource($resourceClass);
+            if ($predicted) {
+                return $predicted;
+            }
         }
 
-        $className = $returnType->getName();
+        // ── Strategy 2: Scan source code for Resource/Collection usage ─
+        try {
+            $filename = $reflection->getFileName();
+            $startLine = $reflection->getStartLine();
+            $endLine = $reflection->getEndLine();
 
-        if (is_subclass_of($className, \Illuminate\Http\Resources\Json\JsonResource::class)) {
-            try {
-                if (class_exists($className)) {
-                    $resource = new $className([]);
-                    return $resource->resolve();
+            if ($filename && file_exists($filename)) {
+                $allLines = file($filename);
+                $methodLines = array_slice($allLines, $startLine - 1, $endLine - $startLine + 1);
+                $source = implode('', $methodLines);
+
+                // Look for: new XResource(, XResource::make(, XResource::collection(, new XCollection(
+                if (preg_match('/(new\s+(\w+Resource)\s*\(|(\w+Resource)::(?:make|collection)\s*\(|new\s+(\w+Collection)\s*\()/', $source, $m)) {
+                    $shortName = $m[2] ?: ($m[3] ?: $m[4]);
+
+                    if ($shortName) {
+                        // Resolve the short class name using the file's use imports
+                        $resolvedClass = $this->resolveShortClassName($shortName, $allLines, $reflection);
+                        if (
+                            $resolvedClass && class_exists($resolvedClass)
+                            && is_subclass_of($resolvedClass, \Illuminate\Http\Resources\Json\JsonResource::class)
+                        ) {
+                            $predicted = $this->predictFromResource($resolvedClass);
+                            if ($predicted) {
+                                return $predicted;
+                            }
+                        }
+                    }
                 }
-            } catch (\Throwable $e) {
-                return null;
+            }
+        } catch (\Throwable $e) {
+            // Skip
+        }
+
+        // ── Strategy 3: Extract keys from inline JSON response patterns ─
+        try {
+            $filename = $reflection->getFileName();
+            $startLine = $reflection->getStartLine();
+            $endLine = $reflection->getEndLine();
+
+            if ($filename && file_exists($filename)) {
+                $lines = array_slice(file($filename), $startLine - 1, $endLine - $startLine + 1);
+                $source = implode('', $lines);
+
+                $keys = $this->extractInlineResponseKeys($source);
+                if (! empty($keys)) {
+                    $example = [];
+                    foreach ($keys as $key) {
+                        $example[$key] = $this->guessValueForKey($key);
+                    }
+
+                    return [
+                        'responseExample' => $example,
+                        'schema'          => $this->buildSchemaFromJson($example),
+                    ];
+                }
+            }
+        } catch (\Throwable $e) {
+            // Skip
+        }
+
+        // ── Strategy 4: Detect Model from route model binding ────────
+        try {
+            $predicted = $this->predictFromModelBinding($reflection);
+            if ($predicted) {
+                return $predicted;
+            }
+        } catch (\Throwable $e) {
+            // Skip
+        }
+
+        // ── Strategy 5: Infer from body params (echo-back heuristic) ─
+        if (! empty($bodyParams)) {
+            $example = $this->generateExampleFromSchema($bodyParams);
+            if (! empty($example)) {
+                return [
+                    'responseExample' => $example,
+                    'schema'          => $this->buildSchemaFromJson($example),
+                ];
             }
         }
 
         return null;
+    }
+
+    /**
+     * Extract response keys from inline JSON patterns in source code.
+     *
+     * Detects patterns like:
+     *   return response()->json(['key1' => ..., 'key2' => ...])
+     *   return ['key1' => ..., 'key2' => ...]
+     */
+    protected function extractInlineResponseKeys(string $source): array
+    {
+        $keys = [];
+
+        // Match: return response()->json([...]) or ResponseHelper/ApiResponse patterns
+        if (preg_match_all("/return\s+(?:response\(\)->json|response\.json|response)\s*\(\s*\[/", $source, $matches, PREG_OFFSET_CAPTURE)) {
+            $offset = end($matches[0])[1];
+            $keys = array_merge($keys, $this->extractArrayKeysFromOffset($source, $offset));
+        }
+
+        // Match: return ['key' => ...]  (direct array return)
+        if (empty($keys) && preg_match_all("/return\s+\[/", $source, $matches, PREG_OFFSET_CAPTURE)) {
+            $offset = end($matches[0])[1];
+            $keys = array_merge($keys, $this->extractArrayKeysFromOffset($source, $offset));
+        }
+
+        // Match: ResponseHelper::success([...]) / ApiResponse::success([...])
+        if (empty($keys) && preg_match_all("/(ResponseHelper|ApiResponse)::\w+\s*\(\s*\[/", $source, $matches, PREG_OFFSET_CAPTURE)) {
+            $offset = end($matches[0])[1];
+            $keys = array_merge($keys, $this->extractArrayKeysFromOffset($source, $offset));
+        }
+
+        return array_values(array_unique($keys));
+    }
+
+    /**
+     * Extract top-level array keys from source starting at a bracket offset.
+     */
+    protected function extractArrayKeysFromOffset(string $source, int $offset): array
+    {
+        $bracketPos = strpos($source, '[', $offset);
+        if ($bracketPos === false) {
+            return [];
+        }
+
+        $depth = 0;
+        $content = '';
+        for ($i = $bracketPos; $i < strlen($source); $i++) {
+            $char = $source[$i];
+            if ($char === '[') {
+                $depth++;
+            }
+            if ($char === ']') {
+                $depth--;
+            }
+            if ($depth === 0) {
+                $content = substr($source, $bracketPos + 1, $i - $bracketPos - 1);
+                break;
+            }
+        }
+
+        $keys = [];
+        if (preg_match_all("/['\"](\w+)['\"]\s*=>/", $content, $m)) {
+            $keys = $m[1];
+        }
+
+        return $keys;
+    }
+
+    /**
+     * Predict response from Eloquent model type-hinted via route model binding.
+     */
+    protected function predictFromModelBinding(\ReflectionMethod $reflection): ?array
+    {
+        foreach ($reflection->getParameters() as $parameter) {
+            $type = $parameter->getType();
+            if (! $type instanceof \ReflectionNamedType || $type->isBuiltin()) {
+                continue;
+            }
+
+            $className = $type->getName();
+
+            // Skip framework types
+            if (
+                str_starts_with($className, 'Illuminate\\')
+                || str_starts_with($className, 'Symfony\\')
+                || str_starts_with($className, 'App\\Http\\Requests\\')
+            ) {
+                continue;
+            }
+
+            if (class_exists($className) && is_subclass_of($className, \Illuminate\Database\Eloquent\Model::class)) {
+                return $this->predictFromModel($className);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Build a response example from an Eloquent model's visible/fillable attributes.
+     */
+    protected function predictFromModel(string $modelClass): ?array
+    {
+        try {
+            $reflectionClass = new \ReflectionClass($modelClass);
+            $model = $reflectionClass->newInstanceWithoutConstructor();
+
+            $attributes = [];
+
+            if (method_exists($model, 'getVisible') && ! empty($model->getVisible())) {
+                $attributes = $model->getVisible();
+            } elseif (method_exists($model, 'getFillable') && ! empty($model->getFillable())) {
+                $attributes = $model->getFillable();
+                $attributes = array_merge(['id'], $attributes, ['created_at', 'updated_at']);
+            }
+
+            if (method_exists($model, 'getHidden') && ! empty($model->getHidden())) {
+                $attributes = array_diff($attributes, $model->getHidden());
+            }
+
+            if (empty($attributes)) {
+                return null;
+            }
+
+            $example = [];
+            foreach ($attributes as $key) {
+                $example[$key] = $this->guessValueForKey($key);
+            }
+
+            if (method_exists($model, 'getCasts')) {
+                $casts = $model->getCasts();
+                foreach ($casts as $key => $castType) {
+                    if (! isset($example[$key])) {
+                        continue;
+                    }
+                    $example[$key] = $this->guessValueFromCast($key, $castType);
+                }
+            }
+
+            return [
+                'responseExample' => $example,
+                'schema'          => $this->buildSchemaFromJson($example),
+            ];
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /**
+     * Guess a realistic example value for a response key based on naming conventions.
+     */
+    protected function guessValueForKey(string $key): mixed
+    {
+        $keyLower = strtolower($key);
+
+        if ($keyLower === 'id' || str_ends_with($keyLower, '_id')) {
+            return 1;
+        }
+        if (
+            str_starts_with($keyLower, 'is_') || str_starts_with($keyLower, 'has_')
+            || str_starts_with($keyLower, 'can_') || $keyLower === 'active'
+            || $keyLower === 'verified' || $keyLower === 'enabled'
+        ) {
+            return true;
+        }
+        if (
+            str_contains($keyLower, '_at') || str_contains($keyLower, 'date')
+            || $keyLower === 'created_at' || $keyLower === 'updated_at'
+        ) {
+            return '2025-01-01T00:00:00.000000Z';
+        }
+        if (str_contains($keyLower, 'email')) {
+            return 'user@example.com';
+        }
+        if (str_contains($keyLower, 'name') || $keyLower === 'title' || $keyLower === 'label') {
+            return 'Example ' . str_replace('_', ' ', $key);
+        }
+        if (
+            str_contains($keyLower, 'url') || str_contains($keyLower, 'link')
+            || str_contains($keyLower, 'avatar') || str_contains($keyLower, 'image')
+            || str_contains($keyLower, 'photo')
+        ) {
+            return 'https://example.com/' . $keyLower;
+        }
+        if (str_contains($keyLower, 'phone') || str_contains($keyLower, 'mobile')) {
+            return '+1234567890';
+        }
+        if (
+            str_contains($keyLower, 'count') || str_contains($keyLower, 'total')
+            || str_contains($keyLower, 'amount') || str_contains($keyLower, 'quantity')
+            || str_contains($keyLower, 'price') || str_contains($keyLower, 'balance')
+        ) {
+            return 0;
+        }
+        if ($keyLower === 'status' || $keyLower === 'state') {
+            return 'active';
+        }
+        if ($keyLower === 'type' || $keyLower === 'role') {
+            return 'default';
+        }
+        if (
+            str_contains($keyLower, 'description') || str_contains($keyLower, 'content')
+            || str_contains($keyLower, 'body') || str_contains($keyLower, 'text')
+            || str_contains($keyLower, 'bio') || str_contains($keyLower, 'summary')
+        ) {
+            return null; // Don't fabricate description text, let it be null unless explicitly provided
+        }
+        if ($keyLower === 'message') {
+            return 'Success';
+        }
+        if ($keyLower === 'data') {
+            return [];
+        }
+
+        return 'string';
+    }
+
+    /**
+     * Guess a value from an Eloquent cast type.
+     */
+    protected function guessValueFromCast(string $key, string $castType): mixed
+    {
+        $castLower = strtolower($castType);
+
+        if (in_array($castLower, ['bool', 'boolean'])) {
+            return true;
+        }
+        if (in_array($castLower, ['int', 'integer'])) {
+            return 0;
+        }
+        if (in_array($castLower, ['float', 'double', 'decimal'])) {
+            return 0.0;
+        }
+        if (in_array($castLower, ['array', 'json', 'collection', 'object'])) {
+            return [];
+        }
+        if (in_array($castLower, ['date', 'datetime', 'immutable_date', 'immutable_datetime', 'timestamp'])) {
+            return '2025-01-01T00:00:00.000000Z';
+        }
+
+        return $this->guessValueForKey($key);
+    }
+
+    /**
+     * Resolve a short class name (e.g. 'UserResource') to its FQCN
+     * by scanning the file's `use` import statements.
+     */
+    protected function resolveShortClassName(string $shortName, array $fileLines, \ReflectionMethod $reflection): ?string
+    {
+        // 1. Scan `use` imports at the top of the file
+        foreach ($fileLines as $line) {
+            $line = trim($line);
+            // Stop scanning at class declaration
+            if (preg_match('/^\s*(abstract\s+)?(class|trait|interface|enum)\s+/', $line)) {
+                break;
+            }
+            // Match use statements
+            if (preg_match('/^use\s+([\w\\\\]+\\\\' . preg_quote($shortName, '/') . ')\s*;/', $line, $m)) {
+                return $m[1];
+            }
+            // Match aliased imports: use Foo\Bar as ShortName;
+            if (preg_match('/^use\s+([\w\\\\]+)\s+as\s+' . preg_quote($shortName, '/') . '\s*;/', $line, $m)) {
+                return $m[1];
+            }
+        }
+
+        // 2. Try controller's namespace + short name
+        $ns = $reflection->getDeclaringClass()->getNamespaceName();
+        $candidate = $ns . '\\' . $shortName;
+        if (class_exists($candidate)) {
+            return $candidate;
+        }
+
+        // 3. Try as fully qualified
+        if (class_exists($shortName)) {
+            return $shortName;
+        }
+
+        return null;
+    }
+
+    /**
+     * Resolve the JsonResource class from the method's return type or @return docblock.
+     *
+     * @param  \ReflectionMethod  $reflection
+     * @return string|null  Fully qualified class name of the resource
+     */
+    protected function resolveResourceClass(\ReflectionMethod $reflection): ?string
+    {
+        // Check native return type first
+        $returnType = $reflection->getReturnType();
+
+        if ($returnType instanceof \ReflectionNamedType && ! $returnType->isBuiltin()) {
+            $className = $returnType->getName();
+            if (class_exists($className) && is_subclass_of($className, \Illuminate\Http\Resources\Json\JsonResource::class)) {
+                return $className;
+            }
+        }
+
+        // Fallback: scan @return docblock tag
+        $comment = $reflection->getDocComment();
+        if ($comment && preg_match('/@return\s+\\\\?([\w\\\\]+Resource\w*)/', $comment, $m)) {
+            $candidate = $m[1];
+
+            // Try to resolve using the controller's namespace
+            $controllerNs = $reflection->getDeclaringClass()->getNamespaceName();
+            $fqcn = ltrim($candidate, '\\');
+
+            // Try as-is first
+            if (class_exists($fqcn) && is_subclass_of($fqcn, \Illuminate\Http\Resources\Json\JsonResource::class)) {
+                return $fqcn;
+            }
+
+            // Try relative to controller namespace
+            $relative = $controllerNs . '\\' . $candidate;
+            if (class_exists($relative) && is_subclass_of($relative, \Illuminate\Http\Resources\Json\JsonResource::class)) {
+                return $relative;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Predict response structure by reading the `toArray()` source code of a JsonResource.
+     *
+     * Parses `$this->key` references and quoted array keys to build a field map.
+     *
+     * @param  string  $resourceClass
+     * @return array{responseExample: mixed, schema: array}|null
+     */
+    protected function predictFromResource(string $resourceClass): ?array
+    {
+        try {
+            $ref = new \ReflectionClass($resourceClass);
+            if (! $ref->hasMethod('toArray')) {
+                return null;
+            }
+
+            $toArray = $ref->getMethod('toArray');
+            $filename = $toArray->getFileName();
+            $startLine = $toArray->getStartLine();
+            $endLine = $toArray->getEndLine();
+
+            if (! $filename || ! file_exists($filename)) {
+                return null;
+            }
+
+            $lines = array_slice(file($filename), $startLine - 1, $endLine - $startLine + 1);
+            $source = implode('', $lines);
+
+            // Extract array keys: 'key' => $this->..., "key" => ...
+            $example = [];
+            if (preg_match_all("/['\"](\w+)['\"]\s*=>/", $source, $matches)) {
+                foreach ($matches[1] as $key) {
+                    $example[$key] = $this->guessExampleValue($key, $source);
+                }
+            }
+
+            if (empty($example)) {
+                return null;
+            }
+
+            return [
+                'responseExample' => $example,
+                'schema'          => $this->buildSchemaFromJson($example),
+            ];
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /**
+     * Synthesize an example value for a given key based on naming conventions.
+     *
+     * @param  string  $key
+     * @param  string  $source  The source code context for advanced heuristics
+     * @return mixed
+     */
+    protected function guessExampleValue(string $key, string $source = ''): mixed
+    {
+        $lower = strtolower($key);
+
+        // Boolean fields
+        if (in_array($lower, ['is_active', 'is_verified', 'is_admin', 'active', 'verified', 'enabled', 'success', 'is_published', 'is_featured'])) {
+            return true;
+        }
+
+        // ID fields
+        if ($lower === 'id' || str_ends_with($lower, '_id')) {
+            return 1;
+        }
+
+        // Count/number fields
+        if (str_ends_with($lower, '_count') || str_ends_with($lower, '_total') || in_array($lower, ['count', 'total', 'amount', 'price', 'quantity', 'order'])) {
+            return 0;
+        }
+
+        // Email
+        if (str_contains($lower, 'email')) {
+            return 'user@example.com';
+        }
+
+        // Phone
+        if (str_contains($lower, 'phone') || str_contains($lower, 'mobile')) {
+            return '+1234567890';
+        }
+
+        // URL/link
+        if (str_contains($lower, 'url') || str_contains($lower, 'link') || str_contains($lower, 'avatar') || str_contains($lower, 'image') || str_contains($lower, 'photo')) {
+            return 'https://example.com/resource';
+        }
+
+        // Date/time patterns
+        if (str_contains($lower, 'date') || str_contains($lower, '_at') || str_ends_with($lower, '_on')) {
+            return '2025-01-01T00:00:00.000000Z';
+        }
+
+        // Name patterns
+        if (in_array($lower, ['name', 'title', 'label', 'username', 'first_name', 'last_name', 'full_name', 'display_name'])) {
+            return 'Example ' . ucfirst(str_replace('_', ' ', $key));
+        }
+
+        // Description/text
+        if (in_array($lower, ['description', 'body', 'content', 'text', 'bio', 'summary', 'message', 'note', 'notes'])) {
+            return null;
+        }
+
+        // Token/key
+        if (str_contains($lower, 'token') || str_contains($lower, 'secret') || str_contains($lower, 'api_key')) {
+            return 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...';
+        }
+
+        // Type/status/role
+        if (in_array($lower, ['type', 'status', 'role', 'guard', 'guard_name', 'provider'])) {
+            return $key;
+        }
+
+        // Check if the source context hints at array/relationship usage
+        if (preg_match("/['\"]" . preg_quote($key) . "['\"]\s*=>\s*\\\$this->(\w+)/", $source, $ctx)) {
+            $accessor = $ctx[1];
+            // If accessing a relationship that's likely a collection
+            if (in_array($accessor, ['permissions', 'roles', 'tags', 'items', 'children'])) {
+                return [];
+            }
+        }
+
+        // Default string
+        return 'string';
+    }
+
+    /**
+     * Generate a synthetic example payload from an already-parsed body parameter schema.
+     *
+     * @param  array  $schema
+     * @return array
+     */
+    protected function generateExampleFromSchema(array $schema): array
+    {
+        $example = [];
+
+        foreach ($schema as $node) {
+            $key = $node['key'] ?? null;
+            if (! $key) continue;
+
+            $type = $node['type'] ?? 'text';
+
+            if (($node['isList'] ?? false) && ! empty($node['schema'] ?? $node['children'] ?? [])) {
+                // Array of objects
+                $example[$key] = [$this->generateExampleFromSchema($node['schema'] ?? $node['children'] ?? [])];
+            } elseif ($type === 'object' && ! empty($node['schema'] ?? $node['children'] ?? [])) {
+                $example[$key] = $this->generateExampleFromSchema($node['schema'] ?? $node['children'] ?? []);
+            } elseif ($type === 'array') {
+                $childType = $node['childType'] ?? 'text';
+                $example[$key] = match ($childType) {
+                    'number'  => [1, 2, 3],
+                    'boolean' => [true, false],
+                    default   => ['example1', 'example2'],
+                };
+            } else {
+                $example[$key] = $this->guessExampleValue($key);
+            }
+        }
+
+        return $example;
     }
 
     /**
@@ -832,7 +1878,7 @@ class PapyrusGenerator
                 'type'         => $uiType,
                 'required'     => false,
                 'nullable'     => $type === 'NULL',
-                'description'  => 'Auto-extracted from example',
+                'description'  => null,
                 'children'     => [],
                 'isList'       => false,
                 'isPattern'    => false,
@@ -876,5 +1922,68 @@ class PapyrusGenerator
 
         // Must run through formatSchemaNodes to convert 'children' arrays into UI 'schema' format!
         return $this->formatSchemaNodes($schema);
+    }
+
+    /**
+     * Build a realistic 422 validation error structure from the actual body parameters.
+     *
+     * Takes the user's configured error shape and replaces the placeholder 'errors'
+     * object with real field names from the endpoint's body params.
+     *
+     * @param  array  $structure  The base 422 structure from config
+     * @param  array  $bodyParams  Parsed body parameter schema nodes
+     * @return array
+     */
+    protected function build422FromBodyParams(array $structure, array $bodyParams): array
+    {
+        $errors = [];
+
+        // Collect top-level field keys from the body params schema
+        $fieldKeys = $this->collectFieldKeys($bodyParams);
+
+        foreach ($fieldKeys as $fieldKey) {
+            $errors[$fieldKey] = [
+                'The ' . str_replace('_', ' ', $fieldKey) . ' field is required.',
+            ];
+        }
+
+        if (! empty($errors)) {
+            $structure['errors'] = $errors;
+        }
+
+        return $structure;
+    }
+
+    /**
+     * Recursively collect field keys from a schema tree for validation error generation.
+     *
+     * @param  array  $nodes
+     * @param  string  $prefix
+     * @param  int  $maxDepth
+     * @return array
+     */
+    protected function collectFieldKeys(array $nodes, string $prefix = '', int $maxDepth = 2): array
+    {
+        if ($maxDepth <= 0) return [];
+
+        $keys = [];
+
+        foreach ($nodes as $node) {
+            $key = $node['key'] ?? null;
+            if (! $key) continue;
+
+            $fullKey = $prefix ? "{$prefix}.{$key}" : $key;
+            $type = $node['type'] ?? 'text';
+            $children = $node['schema'] ?? $node['children'] ?? [];
+
+            if (($type === 'object' || ($node['isList'] ?? false)) && ! empty($children)) {
+                // Recurse into nested objects
+                $keys = array_merge($keys, $this->collectFieldKeys($children, $fullKey, $maxDepth - 1));
+            } else {
+                $keys[] = $fullKey;
+            }
+        }
+
+        return $keys;
     }
 }
