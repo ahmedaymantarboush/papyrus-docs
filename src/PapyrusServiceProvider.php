@@ -68,8 +68,11 @@ class PapyrusServiceProvider extends ServiceProvider
             'papyrus'
         );
 
-        // ── Register PapyrusGenerator as singleton ───────────────────
-        $this->app->singleton(PapyrusGenerator::class, function ($app) {
+        // // ── Register PapyrusGenerator as singleton ───────────────────
+        // $this->app->singleton(PapyrusGenerator::class, function ($app) {
+        //     return new PapyrusGenerator();
+        // });
+        $this->app->bind(PapyrusGenerator::class, function ($app) {
             return new PapyrusGenerator();
         });
     }

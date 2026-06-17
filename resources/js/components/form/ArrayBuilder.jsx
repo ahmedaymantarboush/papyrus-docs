@@ -25,13 +25,24 @@ export default function ArrayBuilder({ node, onChange, depth, disabled = false }
         onChange({ children: [...children, newItem] });
     };
 
+    // The `*` wildcard node's rich metadata (rules, min, max, exists, etc.) is stored in
+    // childDef.schema for plain scalar arrays. Pass it as the item's `schema` reference
+    // so DynamicField → ValidationBadges can render per-item validation badges.
+    const itemSchema = node.childDef?.schema ?? null;
+
     return (
         <div className="space-y-1 bg-slate-50 dark:bg-slate-900/40 rounded-lg p-2 border border-slate-200 dark:border-slate-800/50">
             {children.length === 0 && <p className="text-xs text-slate-600 font-mono italic">Empty array...</p>}
             {children.map((child, i) => (
                 <div key={i} className="relative group/arr pt-1">
                     <span className="absolute -left-[5px] top-4 text-[9px] font-mono text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-[#0B1120] px-1 group-hover/arr:text-amber-500 transition-colors z-10">[{i}]</span>
-                    <DynamicField node={child} onChange={c => updateChild(i, c)} onRemove={() => removeChild(i)} hideKey={true} depth={depth} />
+                    <DynamicField
+                        node={itemSchema ? { ...child, schema: child.schema ?? itemSchema } : child}
+                        onChange={c => updateChild(i, c)}
+                        onRemove={() => removeChild(i)}
+                        hideKey={true}
+                        depth={depth}
+                    />
                 </div>
             ))}
             {!disabled && (

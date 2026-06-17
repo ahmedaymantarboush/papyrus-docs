@@ -84,7 +84,14 @@ export function buildInitialTree(params, savedNodes = []) {
 
         if (!savedItem && schemaItem) {
             if (type === 'object' && schemaItem.isList) { type = 'array'; cDef = { type: 'object', schema: schemaItem.schema }; }
-            else if (type === 'array') { cDef = { type: schemaItem.childType || 'string' }; }
+            else if (type === 'array') {
+                // childDef carries both the scalar type AND the full `*` node metadata
+                // (rules, min, max, exists, etc.) so each array item can render badges.
+                const itemSchema = Array.isArray(schemaItem.schema) && schemaItem.schema.length > 0
+                    ? schemaItem.schema[0]
+                    : null;
+                cDef = { type: schemaItem.childType || itemSchema?.type || 'string', schema: itemSchema };
+            }
         } else if (savedItem) { 
             cDef = savedItem.childDef || cDef; 
         }
@@ -122,7 +129,10 @@ export function resetTreeToDefaults(params) {
         let cDef = p.childDef;
 
         if (type === 'object' && p.isList) { type = 'array'; cDef = { type: 'object', schema: p.schema }; }
-        else if (type === 'array') { cDef = { type: p.childType || 'string' }; }
+        else if (type === 'array') {
+            const itemSchema = Array.isArray(p.schema) && p.schema.length > 0 ? p.schema[0] : null;
+            cDef = { type: p.childType || itemSchema?.type || 'string', schema: itemSchema };
+        }
 
         let children = [];
         if (type === 'object') {

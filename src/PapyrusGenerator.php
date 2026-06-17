@@ -449,9 +449,12 @@ class PapyrusGenerator
                 try {
                     $ref = new \ReflectionClass($fqcn);
                     $constructor = $ref->getConstructor();
-                    // Try to instantiate with default message to get status code
+                    // Try to instantiate with default message to get status code.
+                    // We check via reflection that zero required parameters exist before
+                    // calling new $fqcn() so that the invocation is always safe at runtime.
                     if ($constructor && $constructor->getNumberOfRequiredParameters() === 0) {
-                        $instance = new $fqcn();
+                        /** @phpstan-ignore new.resultUnused */
+                        $instance = new $fqcn(); // @phpstan-ignore-line arguments.count
                         $codes[] = (string) $instance->getStatusCode();
                     }
                 } catch (\Throwable $e) {
@@ -1153,12 +1156,119 @@ class PapyrusGenerator
     }
 
     /**
+     * Determine the structural type of a node whose children contain the wildcard key `*`.
+     *
+     * In Laravel validation rules, the asterisk (`*`) is not a literal field key; it is a
+     * wildcard that represents "every element" of the parent collection. The parent node's
+     * true type depends on the structure of the `*` entry and its siblings:
+     *
+     * ┌──────────────────────────────────────────┬──────────────────────┬─────────────────────────────────────────────┐
+     * │ Rule key example                         │ `*` has children?    │ Resolved type                               │
+     * ├──────────────────────────────────────────┼──────────────────────┼─────────────────────────────────────────────┤
+     * │ tags.*                                   │ No                   │ array  — flat list of scalars               │
+     * │ instructors_id.* (integer|exists:…)      │ No                   │ array  — flat list, child rules preserved   │
+     * │ items.*.name + items.*.qty               │ Yes (name, qty)      │ object — list of keyed objects (isList)     │
+     * │ roles.*.id  (single deep child)          │ Yes (id)             │ object — list of keyed objects (isList)     │
+     * │ meta.*  (key contains "meta")            │ Either               │ object — open key-value bag                 │
+     * └──────────────────────────────────────────┴──────────────────────┴─────────────────────────────────────────────┘
+     *
+     * Decision algorithm
+     * ─────────────────
+     * 1. Meta heuristic (highest priority):
+     *    If the parent key contains the substring "meta", always resolve as an open
+     *    key-value **object** (`isList = false`, empty schema).
+     *
+     * 2. Case B — list of keyed objects:
+     *    If the `*` node itself has named children (e.g. `items.*.name`), or if
+     *    explicit sibling keys exist alongside `*` in the children map, the parent
+     *    is a list of structured objects. Resolve as **object** with `isList = true`
+     *    and a `schema` built from those children.
+     *
+     * 3. Case A — flat list of scalars (default):
+     *    The `*` is the only child and has no children of its own. The parent is a
+     *    plain array (e.g. `tags.*`, `instructors_id.*`).
+     *    - `type`      = 'array'
+     *    - `childType` = the `*` node's resolved type (e.g. 'number', 'text')
+     *    - `schema`    = [ wildcardNode ] — the full `*` metadata is preserved here
+     *                    (including `rules`, `min`, `max`, `required`, etc.) so the
+     *                    frontend can render per-item validation badges. The `*` node's
+     *                    `children` key is stripped before placement.
+     *
+     * @param  array  $node  The parent node being classified. Must contain a `children`
+     *                       key that includes at least one `*` entry.
+     * @return array  The mutated node. `children` is always removed. The node gains
+     *                `type`, `isList`, and one or more of: `childType`, `schema`.
+     */
+    protected function resolveWildcardNodeType(array $node): array
+    {
+        $wildcard = $node['children']['*'];
+
+        // Collect any named siblings that live alongside `*` in the children map.
+        // These are real field definitions, not the wildcard placeholder itself.
+        // Numeric-only keys (e.g. `courses.0`) are positional indices, not named
+        // properties, and should not force the parent into object/list mode.
+        $namedSiblings = array_filter(
+            $node['children'],
+            fn(mixed $_, string $key) => $key !== '*' && ! ctype_digit($key),
+            ARRAY_FILTER_USE_BOTH
+        );
+
+        $wildcardHasChildren  = ! empty($wildcard['children']);
+        $hasNamedSiblings     = ! empty($namedSiblings);
+        $isMeta               = str_contains(strtolower((string) $node['key']), 'meta');
+
+        if ($isMeta) {
+            // ── Special case: 'meta'-named fields are always open key-value objects ──
+            $node['type']   = 'object';
+            $node['schema'] = [];
+            $node['isList'] = false;
+
+        } elseif ($wildcardHasChildren || $hasNamedSiblings) {
+            // ── Case B: array of keyed objects ─────────────────────────────────────
+            //
+            // The wildcard carries named sub-fields (items.*.name, items.*.price),
+            // or explicit sibling keys sit alongside `*`. Each array element is itself
+            // a structured object — render as an object list.
+            $childNodes = array_merge(
+                $wildcard['children'],
+                $namedSiblings
+            );
+
+            $node['type']   = 'object';
+            $node['schema'] = $this->formatSchemaNodes($childNodes);
+            $node['isList'] = true;
+
+        } else {
+            // ── Case A: flat array of scalars ───────────────────────────────────────
+            //
+            // `*` is the only child and carries no children of its own.
+            // The parent is a plain array of uniform scalar values.
+            //
+            // IMPORTANT: We cannot simply discard the wildcard node — it contains rich
+            // validation metadata (rules, min/max, exists constraints, etc.) that the
+            // frontend needs to render per-item validation badges. We preserve it as
+            // a single-element `schema` array after stripping its empty `children` key.
+            $wildcardMeta = $wildcard;
+            unset($wildcardMeta['children']);
+
+            $node['type']      = 'array';
+            $node['childType'] = $wildcard['type'] ?? 'string';
+            $node['isList']    = false;
+            $node['schema']    = [$wildcardMeta];
+        }
+
+        unset($node['children']);
+        return $node;
+    }
+
+    /**
      * Format the raw tree into a clean, frontend-consumable schema.
      *
-     * Handles three structural patterns:
-     *   1. Wildcard arrays: `items.*` → array type with childType
-     *   2. Wildcard objects: `items.*.name` → list of objects with schema
-     *   3. Named children: `address.street` → object with schema
+     * Handles four structural patterns:
+     *   1. Wildcard nodes  (`*` key present) — delegated to resolveWildcardNodeType()
+     *   2. Pre-flagged lists (isList = true)  — array of objects from buildManualSchema
+     *   3. Named children only               — plain nested object
+     *   4. Leaf nodes (no children)          — scalar field
      *
      * @param  array  $nodes  Raw tree nodes
      * @return array  Formatted schema array
@@ -1168,59 +1278,35 @@ class PapyrusGenerator
         $result = [];
 
         foreach ($nodes as $node) {
-            // Check if this node key is a pattern (contains * but is not exactly *)
-            $isPattern = str_contains((string)$node['key'], '*') && $node['key'] !== '*';
+            // Mark pattern keys (e.g. `field_*`) but leave `*` itself unmarked
+            // because it is handled as a structural signal, not a real key.
+            $isPattern = str_contains((string) $node['key'], '*') && $node['key'] !== '*';
             if ($isPattern) {
                 $node['isPattern'] = true;
             }
 
-            // ── Handle wildcard '*' arrays ────────────────────────────
+            // ── 1. Wildcard `*` child present ────────────────────────────────────
             if (isset($node['children']['*'])) {
-                // If '*' is present, it suggests an array of items or array of objects.
-                // We prioritize it even if other keys are somehow present (like an explicit rule for index 0).
-                $wildcard = $node['children']['*'];
-
-                if (! empty($wildcard['children'])) {
-                    // Wildcard with children → list of objects
-                    $node['type']   = 'object';
-                    $node['schema'] = $this->formatSchemaNodes($wildcard['children']);
-                    $node['isList'] = true;
-                } else {
-                    // Wildcard without children → simple array of scalar type
-                    $node['type']      = 'array';
-                    $node['childType'] = $wildcard['type'] ?? 'string';
-                    $node['isList']    = false;
-
-                    // Heuristic: keys containing 'meta' default to object builder
-                    if (str_contains(strtolower((string)$node['key']), 'meta')) {
-                        $node['type']   = 'object';
-                        $node['schema'] = [];
-                        $node['isList'] = false;
-                    }
-                }
-
-                // If there are other named children besides '*', we could append them to schema,
-                // but standard Laravel convention treats `courses.*` as the primary type definition for an array.
-                unset($node['children']);
+                $node = $this->resolveWildcardNodeType($node);
             }
-            // ── Pre-configured arrays/lists (e.g. from buildManualSchema or JSON examples)
+            // ── 2. Pre-configured list (isList flagged by buildManualSchema) ──────
             elseif ($node['isList'] ?? false) {
                 $node['type']   = 'object';
                 $node['schema'] = $this->formatSchemaNodes($node['children'] ?? []);
                 unset($node['children']);
             }
-            // ── Named children → object ──────────────────────────────
+            // ── 3. Named children → nested object ────────────────────────────────
             elseif (! empty($node['children'])) {
                 $node['type']   = 'object';
                 $node['schema'] = $this->formatSchemaNodes($node['children']);
                 $node['isList'] = false;
                 unset($node['children']);
             }
-            // ── Leaf node (no children) ──────────────────────────────
+            // ── 4. Leaf node (scalar field, no children) ──────────────────────────
             else {
                 unset($node['children']);
+                // Normalise: ensure isList is always present for the UI
                 if (isset($node['isList']) && $node['isList'] !== true) {
-                    // Ensure isList is present for UI normalization
                     $node['isList'] = false;
                 }
             }
@@ -1274,19 +1360,19 @@ class PapyrusGenerator
 
                 // Look for: new XResource(, XResource::make(, XResource::collection(, new XCollection(
                 if (preg_match('/(new\s+(\w+Resource)\s*\(|(\w+Resource)::(?:make|collection)\s*\(|new\s+(\w+Collection)\s*\()/', $source, $m)) {
-                    $shortName = $m[2] ?: ($m[3] ?: $m[4]);
+                    // One of the three capture groups (2, 3, or 4) will be non-empty;
+                    // coalesce to the first non-empty match group.
+                    $shortName = $m[2] !== '' ? $m[2] : ($m[3] !== '' ? $m[3] : $m[4]);
 
-                    if ($shortName) {
-                        // Resolve the short class name using the file's use imports
-                        $resolvedClass = $this->resolveShortClassName($shortName, $allLines, $reflection);
-                        if (
-                            $resolvedClass && class_exists($resolvedClass)
-                            && is_subclass_of($resolvedClass, \Illuminate\Http\Resources\Json\JsonResource::class)
-                        ) {
-                            $predicted = $this->predictFromResource($resolvedClass);
-                            if ($predicted) {
-                                return $predicted;
-                            }
+                    // Resolve the short class name using the file's use imports
+                    $resolvedClass = $this->resolveShortClassName($shortName, $allLines, $reflection);
+                    if (
+                        $resolvedClass && class_exists($resolvedClass)
+                        && is_subclass_of($resolvedClass, \Illuminate\Http\Resources\Json\JsonResource::class)
+                    ) {
+                        $predicted = $this->predictFromResource($resolvedClass);
+                        if ($predicted) {
+                            return $predicted;
                         }
                     }
                 }
@@ -1783,7 +1869,7 @@ class PapyrusGenerator
         }
 
         // Check if the source context hints at array/relationship usage
-        if (preg_match("/['\"]" . preg_quote($key) . "['\"]\s*=>\s*\\\$this->(\w+)/", $source, $ctx)) {
+        if (preg_match("/['\"]" . preg_quote($key, '/') . "['\"]\s*=>\s*\\\$this->(\w+)/", $source, $ctx)) {
             $accessor = $ctx[1];
             // If accessing a relationship that's likely a collection
             if (in_array($accessor, ['permissions', 'roles', 'tags', 'items', 'children'])) {
