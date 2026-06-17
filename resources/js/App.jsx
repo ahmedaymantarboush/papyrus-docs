@@ -346,10 +346,10 @@ export default function App() {
     return (
         <div className="h-[100dvh] max-h-[100dvh] w-screen overflow-hidden bg-slate-50 dark:bg-[#0B1120] text-slate-800 dark:text-slate-300 flex flex-col transition-colors duration-200">
             {/* ── TOP NAVBAR (Fixed) ── */}
-            <header className="fixed top-0 inset-x-0 h-14 bg-white dark:bg-[#0B1120] border-b border-slate-200 dark:border-slate-800/60 flex items-center justify-between px-4 z-[70]">
+            <header style={{ zIndex: 2000 }} className="fixed top-0 inset-x-0 h-14 bg-white dark:bg-[#0B1120] border-b border-slate-200 dark:border-slate-800/60 flex items-center justify-between px-4">
                 <div className="flex items-center gap-3">
-                    <button onClick={() => { setMenuOpen(prev => !prev); window.innerWidth < 1024 && setPlaygroundOpen(false); }} className="text-slate-500 hover:text-amber-500 transition-colors">
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
+                    <button onClick={() => { setMenuOpen(prev => !prev); window.innerWidth < 1024 && setPlaygroundOpen(false); }} className="text-slate-500 hover:text-amber-500 transition-colors flex items-center gap-1.5 focus:outline-none">
+                        <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
                     </button>
                     <h1 className="font-brand font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                         {config.faviconUrl ? <img src={config.faviconUrl} alt="Papyrus" className="w-5 h-5" /> : <span className="text-amber-500 text-lg">¶</span>} 
@@ -384,13 +384,11 @@ export default function App() {
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31-.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                     </button>
 
-                    {/* Desktop Playground Toggle */}
-                    <button onClick={() => setPlaygroundOpen(prev => !prev)} className="hidden lg:flex p-1.5 text-slate-500 hover:text-amber-500 dark:hover:text-amber-400 transition-colors rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 ml-1" title="Toggle Try It Panel">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 4v16" /></svg>
+                    {/* Unified Playground Toggle */}
+                    <button onClick={() => { setPlaygroundOpen(prev => !prev); window.innerWidth < 1024 && setMenuOpen(false); }} className="text-amber-500 dark:text-amber-400 font-mono text-xs font-bold hover:text-amber-600 dark:hover:text-amber-300 transition-colors ml-2 flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-amber-500/20 bg-amber-500/10 shrink-0">
+                        <svg className="w-4 h-4 hidden sm:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 4v16" /></svg>
+                        TRY IT
                     </button>
-
-                    {/* Mobile Playground Toggle */}
-                    <button onClick={() => { setPlaygroundOpen(prev => !prev); setMenuOpen(false); }} className="lg:hidden text-amber-500 dark:text-amber-400 font-mono text-xs font-bold hover:text-amber-600 dark:hover:text-amber-300 transition-colors ml-2">TRY IT</button>
                 </div>
             </header>
 

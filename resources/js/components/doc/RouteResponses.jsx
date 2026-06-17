@@ -8,6 +8,8 @@ export default function RouteResponses({ responses }) {
     const statusCodes = Object.keys(responses).sort((a, b) => parseInt(a) - parseInt(b));
     const [activeStatus, setActiveStatus] = useState(statusCodes[0]);
     const [activeTab, setActiveTab] = useState('schema');
+    const [htmlPreview, setHtmlPreview] = useState(false);
+    const iframeRef = React.useRef(null);
 
     if (!activeStatus || !responses[activeStatus]) return null;
 
@@ -16,12 +18,31 @@ export default function RouteResponses({ responses }) {
     const hasExample = data.responseExample !== null && data.responseExample !== undefined;
     const hasContentType = data.contentType && data.contentType !== 'application/json';
 
+    // Detect if the example string is HTML
+    const exampleStr = hasExample && typeof data.responseExample === 'string' ? data.responseExample : null;
+    const isHtmlExample = exampleStr
+        ? /^\s*<!doctype\s+html/i.test(exampleStr) || /^\s*<html/i.test(exampleStr) || (data.contentType === 'text/html')
+        : false;
+
+    const handleIframeLoad = () => {
+        if (!iframeRef.current) return;
+        try {
+            const iframe = iframeRef.current;
+            const doc = iframe.contentDocument || iframe.contentWindow?.document;
+            if (doc?.body) {
+                const height = Math.max(doc.body.scrollHeight, doc.documentElement?.scrollHeight || 0);
+                iframe.style.height = `${Math.min(Math.max(height + 20, 200), 600)}px`;
+            }
+        } catch { /* cross-origin sandbox */ }
+    };
+
     // Default to 'example' tab if schema doesn't exist but example does, or auto-switch if navigating
     React.useEffect(() => {
-        if (hasContentType) return; // Non-JSON responses don't use tabs
+        setHtmlPreview(false);
+        if (hasContentType && !hasExample) return; // Non-JSON with no body — no tabs
         if (!hasSchema && hasExample) setActiveTab('example');
         if (hasSchema && !hasExample) setActiveTab('schema');
-        if (!hasSchema && !hasExample) setActiveTab('schema'); 
+        if (!hasSchema && !hasExample) setActiveTab('schema');
     }, [activeStatus, hasSchema, hasExample, hasContentType]);
 
     // Content type display icons
@@ -56,6 +77,87 @@ export default function RouteResponses({ responses }) {
                 </div>
                 {node.schema && node.schema.length > 0 && node.schema.map(child => renderSchemaRow(child, depth + 1))}
             </React.Fragment>
+        );
+    };
+
+    /** Render the example body based on content type */
+    const renderExampleBody = () => {
+        if (!hasExample) return null;
+
+        const copyStr = typeof data.responseExample === 'string'
+            ? data.responseExample
+            : JSON.stringify(data.responseExample, null, 2);
+
+        return (
+            <div className="bg-[#f8fafc] dark:bg-[#0B1120] relative group/json">
+                {/* Toolbar */}
+                <div className="flex items-center gap-2 px-3 py-1.5 border-b border-slate-200 dark:border-slate-800/60 bg-slate-100/80 dark:bg-slate-900/50">
+                    {isHtmlExample && (
+                        <div className="flex gap-1 flex-1">
+                            <button
+                                onClick={() => setHtmlPreview(false)}
+                                className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold transition-colors ${!htmlPreview ? 'bg-amber-500 text-white' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
+                            >
+                                Source
+                            </button>
+                            <button
+                                onClick={() => setHtmlPreview(true)}
+                                className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold transition-colors ${htmlPreview ? 'bg-blue-500 text-white' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
+                            >
+                                🌐 Preview
+                            </button>
+                        </div>
+                    )}
+                    {!isHtmlExample && <div className="flex-1" />}
+                    <button
+                        onClick={(e) => {
+                            copyToClipboard(copyStr);
+                            const t = e.currentTarget;
+                            const o = t.innerHTML;
+                            t.innerHTML = `<svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>`;
+                            setTimeout(() => t.innerHTML = o, 2000);
+                        }}
+                        title="Copy"
+                        className="p-1.5 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-amber-500 dark:hover:text-amber-400 transition-colors"
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                    </button>
+                </div>
+
+                <div className="p-4 max-h-[500px] overflow-auto custom-scrollbar text-[13px]">
+                    {/* JSON object/array */}
+                    {typeof data.responseExample === 'object' ? (
+                        <JsonEditor
+                            data={data.responseExample}
+                            theme={document.documentElement.classList.contains('dark') ? githubDarkTheme : githubLightTheme}
+                            restrictEdit={true}
+                            restrictAdd={true}
+                            restrictDelete={true}
+                            restrictDrag={true}
+                            restrictTypeSelection={true}
+                            rootName=""
+                            collapse={3}
+                            className="!font-mono !bg-transparent"
+                        />
+                    ) : isHtmlExample && htmlPreview ? (
+                        /* HTML preview in sandboxed iframe */
+                        <iframe
+                            ref={iframeRef}
+                            srcDoc={exampleStr}
+                            sandbox="allow-same-origin allow-scripts"
+                            title="HTML Response Preview"
+                            className="w-full border-0 rounded bg-white"
+                            style={{ width: '100%', minHeight: '200px', height: '300px' }}
+                            onLoad={handleIframeLoad}
+                        />
+                    ) : (
+                        /* Plain text / HTML source */
+                        <pre className="font-mono text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-all leading-relaxed">
+                            {data.responseExample}
+                        </pre>
+                    )}
+                </div>
+            </div>
         );
     };
 
@@ -95,21 +197,25 @@ export default function RouteResponses({ responses }) {
 
             <div className="bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-800/60 rounded-xl overflow-hidden shadow-sm">
                 
-                {/* Non-JSON response type card */}
+                {/* Non-JSON response type badge — always show, then optionally show body below */}
                 {hasContentType && (
-                    <div className="p-6 flex items-center gap-4">
-                        <div className={`p-3 rounded-xl border ${contentTypeIcons[data.contentType]?.color || 'text-slate-500 bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700'}`}>
-                            <span className="text-2xl">{contentTypeIcons[data.contentType]?.icon || '📦'}</span>
-                        </div>
-                        <div>
-                            <div className="font-bold text-sm text-slate-700 dark:text-slate-200">
-                                {contentTypeIcons[data.contentType]?.label || data.contentType}
+                    <>
+                        <div className="p-6 flex items-center gap-4 border-b border-slate-100 dark:border-slate-800/50">
+                            <div className={`p-3 rounded-xl border ${contentTypeIcons[data.contentType]?.color || 'text-slate-500 bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700'}`}>
+                                <span className="text-2xl">{contentTypeIcons[data.contentType]?.icon || '📦'}</span>
                             </div>
-                            <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                                {data.description || `Content-Type: ${data.contentType}`}
+                            <div>
+                                <div className="font-bold text-sm text-slate-700 dark:text-slate-200">
+                                    {contentTypeIcons[data.contentType]?.label || data.contentType}
+                                </div>
+                                <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                    {data.description || `Content-Type: ${data.contentType}`}
+                                </div>
                             </div>
                         </div>
-                    </div>
+                        {/* Show example body if one exists (e.g. an HTML page example) */}
+                        {hasExample && renderExampleBody()}
+                    </>
                 )}
 
                 {/* JSON response — Internal Tabs for Schema vs Example */}
@@ -151,45 +257,8 @@ export default function RouteResponses({ responses }) {
                             </div>
                         )}
 
-                        {/* Example Tab Content */}
-                        {activeTab === 'example' && hasExample && (
-                            <div className="bg-[#f8fafc] dark:bg-[#0B1120] relative group/json">
-                                <button 
-                                    onClick={(e) => {
-                                        const exStr = typeof data.responseExample === 'string' ? data.responseExample : JSON.stringify(data.responseExample, null, 2);
-                                        copyToClipboard(exStr);
-                                        const t = e.currentTarget;
-                                        const o = t.innerHTML;
-                                        t.innerHTML = `<svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>`;
-                                        setTimeout(() => t.innerHTML = o, 2000);
-                                    }}
-                                    title="Copy Example JSON"
-                                    className="absolute top-3 right-3 p-1.5 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-amber-500 dark:hover:text-amber-400 opacity-0 group-hover/json:opacity-100 transition-opacity z-10"
-                                >
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-                                </button>
-                                <div className="p-4 max-h-[500px] overflow-auto custom-scrollbar text-[13px]">
-                                    {typeof data.responseExample === 'object' ? (
-                                        <JsonEditor
-                                            data={data.responseExample}
-                                            theme={document.documentElement.classList.contains('dark') ? githubDarkTheme : githubLightTheme}
-                                            restrictEdit={true}
-                                            restrictAdd={true}
-                                            restrictDelete={true}
-                                            restrictDrag={true}
-                                            restrictTypeSelection={true}
-                                            rootName=""
-                                            collapse={3}
-                                            className="!font-mono !bg-transparent"
-                                        />
-                                    ) : (
-                                        <pre className="font-mono text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-all leading-relaxed">
-                                            {data.responseExample}
-                                        </pre>
-                                    )}
-                                </div>
-                            </div>
-                        )}
+                        {activeTab === 'example' && hasExample && renderExampleBody()}
+
 
                         {!hasSchema && !hasExample && (
                             <div className="p-8 text-center text-slate-400 dark:text-slate-600 font-mono text-sm italic">

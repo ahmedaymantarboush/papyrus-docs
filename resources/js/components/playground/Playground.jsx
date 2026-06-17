@@ -166,19 +166,19 @@ export default function Playground({ route, formValues, queryValues, pathVals, o
 
     return (
         <>
-            {open && <div className="fixed inset-0 bg-black/60 z-40 lg:hidden backdrop-blur-sm" onClick={onClose} />}
-            <aside data-panel="playground" ref={pgRef} style={{ width: width + 'px', marginRight: open ? '0px' : `-${width}px` }} className={`max-w-[100vw] fixed top-14 lg:top-0 right-0 h-[calc(100vh-3.5rem)] z-[50] flex flex-col bg-white dark:bg-[#0B1120] border-l border-slate-200 dark:border-slate-800/60 shadow-2xl transition-all duration-300 ease-in-out lg:relative ${open ? 'translate-x-0' : 'translate-x-full lg:translate-x-0 lg:!mr-[-100%] lg:hidden'} shrink-0`}>
+            {open && <div style={{ zIndex: 890 }} className="fixed top-14 bottom-0 inset-x-0 bg-black/60 lg:hidden backdrop-blur-sm" onClick={onClose} />}
+            <aside data-panel="playground" ref={pgRef} style={{ width: width + 'px', marginRight: open ? '0px' : `-${width}px`, zIndex: 899 }} className={`max-w-[100vw] fixed top-14 lg:top-0 right-0 h-[calc(100vh-3.5rem)] flex flex-col bg-white dark:bg-[#0B1120] border-l border-slate-200 dark:border-slate-800/60 shadow-2xl transition-all duration-300 ease-in-out lg:relative ${open ? 'translate-x-0' : 'translate-x-full lg:translate-x-0 lg:!mr-[-100%] lg:hidden'} shrink-0`}>
                 <div onMouseDown={startResizing} className="absolute top-0 left-0 bottom-0 w-2 cursor-col-resize hover:bg-amber-500/20 active:bg-amber-500/40 z-50 transition-colors -ml-1" />
 
                 <div className="shrink-0 border-b border-slate-200 dark:border-slate-800/40 flex items-center gap-2 px-3 py-3 object-top">
                     <button className="lg:hidden text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 mr-1" onClick={onClose}>
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                     </button>
-                    <div className="flex-1 flex bg-slate-100 dark:bg-slate-900/60 p-0.5 rounded-lg border border-slate-200 dark:border-slate-800/60">
+                    <div className="flex-1 min-w-0 flex overflow-x-auto custom-scrollbar snap-x bg-slate-100 dark:bg-slate-900/60 p-0.5 rounded-lg border border-slate-200 dark:border-slate-800/60">
                         {tabs.map(t => (
-                            <button key={t.id} onClick={() => setTab(t.id)} className={`flex-1 py-1.5 text-[11px] font-medium rounded-md transition-all flex items-center justify-center gap-1.5 ${t.mobileOnly ? 'lg:hidden' : ''} ${tab === t.id ? 'bg-white dark:bg-slate-800 text-amber-600 dark:text-amber-400 shadow-sm border border-slate-200/50 dark:border-transparent' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>
-                                {t.dot && <span className={`w-1.5 h-1.5 rounded-full ${t.dot}`} />}
-                                {t.label}
+                            <button key={t.id} onClick={() => setTab(t.id)} className={`flex-1 shrink-0 px-3 py-1.5 text-[11px] font-medium rounded-md transition-all flex items-center justify-center gap-1.5 snap-start ${t.mobileOnly ? 'lg:hidden' : ''} ${tab === t.id ? 'bg-white dark:bg-slate-800 text-amber-600 dark:text-amber-400 shadow-sm border border-slate-200/50 dark:border-transparent' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>
+                                {t.dot && <span className={`shrink-0 w-1.5 h-1.5 rounded-full ${t.dot}`} />}
+                                <span className="whitespace-nowrap">{t.label}</span>
                             </button>
                         ))}
                     </div>
