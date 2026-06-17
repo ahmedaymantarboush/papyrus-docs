@@ -20,16 +20,16 @@ export default function SettingsModal({ open, onClose, settings, setSettings }) 
     const update = (k, v) => setSettings(s => ({ ...s, [k]: v }));
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 backdrop-blur-sm bg-black/60">
-            <div className="bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700/60 rounded-xl max-w-lg w-full shadow-2xl overflow-hidden flex flex-col max-h-full animate-in fade-in zoom-in-95 duration-200">
-                <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-[#0B1120]">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 backdrop-blur-sm bg-black/60">
+            <div className="bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700/60 rounded-xl max-w-lg w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-200 z-[9999]">
+                <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-[#0B1120] shrink-0">
                     <h2 className="font-brand font-bold text-slate-800 dark:text-slate-100 text-lg">Papyrus Settings</h2>
                     <button onClick={onClose} className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                     </button>
                 </div>
 
-                <div className="p-5 overflow-y-auto space-y-6">
+                <div className="p-5 overflow-y-auto overflow-x-hidden space-y-6 min-h-0">
                     <div className="space-y-4">
                         <h3 className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest border-b border-slate-200 dark:border-slate-800 pb-2">Sorting & Grouping</h3>
                         <div className="flex flex-col gap-6">
@@ -71,7 +71,7 @@ export default function SettingsModal({ open, onClose, settings, setSettings }) 
                         <h3 className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest border-b border-slate-200 dark:border-slate-800 pb-2">Filters</h3>
                         <div>
                             <label className="block text-xs font-mono text-slate-500 dark:text-slate-400 mb-2">HTTP Methods</label>
-                            <div className="flex flex-wrap gap-2">
+                            <div className="flex flex-wrap gap-2 min-w-0">
                                 {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map(m => {
                                     const isActive = (settings.filterMethods || []).includes(m);
                                     const badgeColorClass = isActive
@@ -85,7 +85,7 @@ export default function SettingsModal({ open, onClose, settings, setSettings }) 
                                                 if (isActive) update('filterMethods', current.filter(x => x !== m));
                                                 else update('filterMethods', [...current, m]);
                                             }}
-                                            className={`px-3 py-1.5 rounded-md text-[11px] font-mono font-bold tracking-wider border transition-all duration-200 ${badgeColorClass}`}
+                                            className={`cursor-pointer shrink-0 px-3 py-1.5 rounded-md text-[11px] font-mono font-bold tracking-wider border transition-all duration-200 ${badgeColorClass}`}
                                         >{m}</button>
                                     );
                                 })}
@@ -124,7 +124,7 @@ export default function SettingsModal({ open, onClose, settings, setSettings }) 
                     </div>
                 </div>
 
-                <div className="px-5 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0B1120] flex justify-between items-center">
+                <div className="px-5 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0B1120] flex justify-between items-center shrink-0">
                     <button onClick={clearStorage} className={`${btnSm} font-mono px-4 py-2 border-rose-500/30 text-rose-500 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10`}>Clear Local Storage</button>
                     <button onClick={onClose} className={`${btnSm} font-mono px-4 py-2 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800`}>Done</button>
                 </div>

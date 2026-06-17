@@ -206,7 +206,7 @@ describe('OpenApiGenerator', function () {
 
         $deleteRoute = (object) [
             'uri' => 'api/users/{user}',
-            'methods' => ['DELETE'],
+            'methods' => ['GET', 'DELETE'],
             'title' => 'Delete User',
             'description' => '',
             'group' => 'Users',
@@ -222,10 +222,11 @@ describe('OpenApiGenerator', function () {
         $schema = collect([['name' => 'Users', 'routes' => collect([$deleteRoute])]]);
         $spec = $gen->generate($schema);
 
-        // DELETE should be excluded
-        if (isset($spec['paths']['/api/users/{user}'])) {
-            expect($spec['paths']['/api/users/{user}'])->not->toHaveKey('delete');
-        }
+        // Path should exist because GET is allowed
+        expect($spec['paths'])->toHaveKey('/api/users/{user}');
+        // But DELETE should be excluded
+        expect($spec['paths']['/api/users/{user}'])->not->toHaveKey('delete');
+        expect($spec['paths']['/api/users/{user}'])->toHaveKey('get');
     });
 
     it('maps node types to OpenAPI schema types correctly', function () {
